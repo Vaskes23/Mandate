@@ -52,6 +52,7 @@ class MainWindow(GlassMorphicWindow):
         self._add_controls(layout)
         layout.addStretch()
         self._add_footer(layout)
+        self._add_opacity_slider(layout)
 
     def _add_header(self, layout):
         """
@@ -163,42 +164,6 @@ class MainWindow(GlassMorphicWindow):
         material_layout.addStretch()
         controls_layout.addLayout(material_layout)
 
-        # Transparency slider
-        alpha_layout = QVBoxLayout()
-        alpha_label = QLabel("Transparency:")
-        alpha_label.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
-
-        self.alpha_slider = QSlider(Qt.Horizontal)
-        self.alpha_slider.setMinimum(0)  # 0% = fully transparent
-        self.alpha_slider.setMaximum(100)  # 100% = fully opaque
-        self.alpha_slider.setValue(int(self.glass_config.window_alpha * 100))
-        # Use sliderReleased instead of valueChanged to reduce update frequency
-        self.alpha_slider.sliderReleased.connect(self._on_alpha_changed)
-        self.alpha_slider.setStyleSheet("""
-            QSlider::groove:horizontal {
-                background: rgba(255, 255, 255, 0.2);
-                height: 10px;
-                border-radius: 5px;
-                border: 1px solid rgba(255, 255, 255, 0.3);
-            }
-            QSlider::handle:horizontal {
-                background: white;
-                border: 2px solid rgba(255, 255, 255, 0.8);
-                width: 20px;
-                height: 20px;
-                margin: -7px 0;
-                border-radius: 10px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: rgba(255, 255, 255, 0.9);
-                border: 2px solid white;
-            }
-        """)
-
-        alpha_layout.addWidget(alpha_label)
-        alpha_layout.addWidget(self.alpha_slider)
-        controls_layout.addLayout(alpha_layout)
-
         layout.addWidget(controls_widget)
 
     def _add_footer(self, layout):
@@ -272,24 +237,6 @@ class MainWindow(GlassMorphicWindow):
             # Invalid material name, ignore
             pass
 
-    def _on_alpha_changed(self):
-        """
-        Handle transparency slider release.
-
-        Creates a new GlassConfig with the updated alpha value and updates the window.
-        Uses sliderReleased signal to avoid updating on every pixel movement.
-        """
-        alpha = self.alpha_slider.value() / 100.0
-        new_config = GlassConfig(
-            material=self.glass_config.material,
-            blending_mode=self.glass_config.blending_mode,
-            state=self.glass_config.state,
-            appearance=self.glass_config.appearance,
-            window_alpha=alpha,
-            emphasized=self.glass_config.emphasized,
-        )
-        self.update_glass_config(new_config)
-
     def _toggle_fullscreen(self):
         """
         Toggle between fullscreen and windowed mode.
@@ -300,3 +247,111 @@ class MainWindow(GlassMorphicWindow):
         else:
             self.showFullScreen()
             self.fullscreen_button.setText("Exit Fullscreen")
+
+    def _add_opacity_slider(self, layout):
+        """
+        Add opacity slider at the bottom with real-time value display.
+
+        Args:
+            layout: QVBoxLayout to add the slider to
+        """
+        # Container for opacity slider at bottom
+        opacity_container = QWidget()
+        opacity_container.setStyleSheet("""
+            QWidget {
+                background-color: rgba(0, 0, 0, 0.5);
+                border-radius: 10px;
+                padding: 10px;
+            }
+        """)
+
+        opacity_layout = QVBoxLayout(opacity_container)
+        opacity_layout.setContentsMargins(20, 15, 20, 15)
+        opacity_layout.setSpacing(10)
+
+        # Header with label and value display
+        header_layout = QHBoxLayout()
+
+        opacity_label = QLabel("Window Opacity:")
+        opacity_label.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
+        header_layout.addWidget(opacity_label)
+
+        header_layout.addStretch()
+
+        # Value display label
+        self.opacity_value_label = QLabel(f"{int(self.glass_config.window_alpha * 100)}%")
+        self.opacity_value_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                font-size: 18px;
+                font-weight: bold;
+                background-color: rgba(255, 255, 255, 0.2);
+                padding: 5px 15px;
+                border-radius: 5px;
+                min-width: 60px;
+            }
+        """)
+        self.opacity_value_label.setAlignment(Qt.AlignCenter)
+        header_layout.addWidget(self.opacity_value_label)
+
+        opacity_layout.addLayout(header_layout)
+
+        # Opacity slider
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setMinimum(0)
+        self.opacity_slider.setMaximum(100)
+        self.opacity_slider.setValue(int(self.glass_config.window_alpha * 100))
+        self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
+        self.opacity_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(255, 0, 0, 0.5),
+                    stop:0.5 rgba(255, 255, 0, 0.5),
+                    stop:1 rgba(0, 255, 0, 0.5));
+                height: 12px;
+                border-radius: 6px;
+                border: 2px solid rgba(255, 255, 255, 0.4);
+            }
+            QSlider::handle:horizontal {
+                background: white;
+                border: 3px solid rgba(255, 255, 255, 0.9);
+                width: 24px;
+                height: 24px;
+                margin: -8px 0;
+                border-radius: 12px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: rgba(255, 255, 255, 1);
+                border: 3px solid white;
+                width: 28px;
+                height: 28px;
+                margin: -10px 0;
+                border-radius: 14px;
+            }
+        """)
+
+        opacity_layout.addWidget(self.opacity_slider)
+
+        layout.addWidget(opacity_container)
+
+    def _on_opacity_changed(self, value):
+        """
+        Handle opacity slider movement with real-time updates.
+
+        Args:
+            value: Slider value (0-100)
+        """
+        # Update value display
+        self.opacity_value_label.setText(f"{value}%")
+
+        # Update window opacity in real-time
+        alpha = value / 100.0
+        new_config = GlassConfig(
+            material=self.glass_config.material,
+            blending_mode=self.glass_config.blending_mode,
+            state=self.glass_config.state,
+            appearance=self.glass_config.appearance,
+            window_alpha=alpha,
+            emphasized=self.glass_config.emphasized,
+        )
+        self.update_glass_config(new_config)
