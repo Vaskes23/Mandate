@@ -203,7 +203,7 @@ class MainWindow(GlassMorphicWindow):
 
     def _add_footer(self, layout):
         """
-        Add close button to the layout.
+        Add fullscreen and close buttons to the layout.
 
         Args:
             layout: QVBoxLayout to add the footer to
@@ -211,10 +211,8 @@ class MainWindow(GlassMorphicWindow):
         footer_layout = QHBoxLayout()
         footer_layout.addStretch()
 
-        close_button = QPushButton("Close")
-        close_button.setFixedSize(100, 40)
-        close_button.clicked.connect(self.close)
-        close_button.setStyleSheet("""
+        # Button style (shared)
+        button_style = """
             QPushButton {
                 background-color: rgba(255, 255, 255, 0.2);
                 color: white;
@@ -229,9 +227,24 @@ class MainWindow(GlassMorphicWindow):
             QPushButton:pressed {
                 background-color: rgba(255, 255, 255, 0.15);
             }
-        """)
+        """
 
+        # Fullscreen button
+        self.fullscreen_button = QPushButton("Fullscreen")
+        self.fullscreen_button.setFixedSize(120, 40)
+        self.fullscreen_button.clicked.connect(self._toggle_fullscreen)
+        self.fullscreen_button.setStyleSheet(button_style)
+        footer_layout.addWidget(self.fullscreen_button)
+
+        footer_layout.addSpacing(10)
+
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.setFixedSize(100, 40)
+        close_button.clicked.connect(self.close)
+        close_button.setStyleSheet(button_style)
         footer_layout.addWidget(close_button)
+
         footer_layout.addStretch()
         layout.addLayout(footer_layout)
 
@@ -276,3 +289,14 @@ class MainWindow(GlassMorphicWindow):
             emphasized=self.glass_config.emphasized,
         )
         self.update_glass_config(new_config)
+
+    def _toggle_fullscreen(self):
+        """
+        Toggle between fullscreen and windowed mode.
+        """
+        if self.isFullScreen():
+            self.showNormal()
+            self.fullscreen_button.setText("Fullscreen")
+        else:
+            self.showFullScreen()
+            self.fullscreen_button.setText("Exit Fullscreen")
