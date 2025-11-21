@@ -16,7 +16,33 @@ A Python desktop application demonstrating authentic glass-morphic (translucent 
 
 ## Installation
 
-1. **Install dependencies:**
+### Prerequisites
+
+Before installing the application, ensure you have:
+
+1. **Xcode Command-Line Tools**
+
+   Required for building pyobjc native extensions:
+   ```bash
+   xcode-select --install
+   ```
+
+2. **macOS-Only Application**
+
+   This application requires macOS 10.14+ and will immediately exit on other platforms (Windows, Linux) with an error message.
+
+3. **Python Launcher** (Optional)
+
+   For best results on macOS, use `pythonw` instead of `python` to avoid potential GUI issues:
+   ```bash
+   pythonw main.py
+   ```
+
+   However, `python main.py` should work fine in most cases.
+
+### Installing Dependencies
+
+1. **Install Python packages:**
    ```bash
    pip install -r requirements.txt
    ```

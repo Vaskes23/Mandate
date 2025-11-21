@@ -5,12 +5,24 @@ This module provides GlassMorphicWindow, a reusable QMainWindow subclass that
 integrates macOS NSVisualEffectView for creating windows with translucent blur effects.
 """
 
+import logging
+
 from PyQt5.QtWidgets import QMainWindow
 from PyQt5.QtCore import Qt, QTimer
 
 from app.config import GlassConfig, DEFAULT_CONFIG
 from app.core.vibrancy import VibrancyHelper
 from app.utils.macos_helpers import require_macos_compatibility
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+# Cache NSMakeRect at module scope to avoid repeated imports
+try:
+    from AppKit import NSMakeRect
+    _NS_MAKE_RECT = NSMakeRect
+except ImportError:
+    _NS_MAKE_RECT = None
 
 
 class GlassMorphicWindow(QMainWindow):
@@ -110,7 +122,9 @@ class GlassMorphicWindow(QMainWindow):
             VibrancyHelper.set_window_alpha(self, self.glass_config.window_alpha)
 
         except Exception as e:
-            print(f"Warning: Failed to set up glass effect: {e}")
+            logger.exception("Failed to set up glass effect")
+            # Re-raise to make failures visible during development
+            raise
 
     def update_glass_config(self, config: GlassConfig):
         """
@@ -135,21 +149,23 @@ class GlassMorphicWindow(QMainWindow):
                 VibrancyHelper.set_window_appearance(self, config.appearance.value)
                 VibrancyHelper.set_window_alpha(self, config.window_alpha)
             except Exception as e:
-                print(f"Warning: Failed to update glass effect: {e}")
+                logger.exception("Failed to update glass effect")
+                raise
 
     def resizeEvent(self, event):
         """
         Update visual effect view frame when window is resized.
+
+        Uses cached NSMakeRect to avoid repeated imports on every resize event.
 
         Args:
             event: QResizeEvent
         """
         super().resizeEvent(event)
 
-        if self._visual_effect_view is not None:
+        if self._visual_effect_view is not None and _NS_MAKE_RECT is not None:
             try:
-                from AppKit import NSMakeRect
-                frame = NSMakeRect(0, 0, self.width(), self.height())
+                frame = _NS_MAKE_RECT(0, 0, self.width(), self.height())
                 self._visual_effect_view.setFrame_(frame)
             except Exception:
                 pass

@@ -22,10 +22,28 @@ try:
         NSViewHeightSizable,
         NSWindowBelow,
         NSAppearance,
+        NSVisualEffectMaterialSidebar,
+        NSVisualEffectMaterialTitlebar,
+        NSVisualEffectMaterialSheet,
+        NSVisualEffectMaterialMenu,
+        NSVisualEffectMaterialPopover,
+        NSVisualEffectMaterialContentBackground,
+        NSVisualEffectMaterialWindowBackground,
+        NSVisualEffectMaterialUnderWindowBackground,
+        NSVisualEffectMaterialHeaderView,
+        NSVisualEffectMaterialHUDWindow,
+        NSWindowStyleMaskFullSizeContentView,
     )
     APPKIT_AVAILABLE = True
 except ImportError:
     APPKIT_AVAILABLE = False
+    # Define dummy values for when AppKit is not available
+    (NSVisualEffectMaterialSidebar, NSVisualEffectMaterialTitlebar,
+     NSVisualEffectMaterialSheet, NSVisualEffectMaterialMenu,
+     NSVisualEffectMaterialPopover, NSVisualEffectMaterialContentBackground,
+     NSVisualEffectMaterialWindowBackground, NSVisualEffectMaterialUnderWindowBackground,
+     NSVisualEffectMaterialHeaderView, NSVisualEffectMaterialHUDWindow,
+     NSWindowStyleMaskFullSizeContentView) = (None,) * 11
 
 
 class VibrancyHelper:
@@ -36,18 +54,18 @@ class VibrancyHelper:
     NSVisualEffectView instances into PyQt windows.
     """
 
-    # Material constants (NSVisualEffectMaterial enum values)
+    # Material constants (using symbolic AppKit constants instead of hard-coded integers)
     MATERIALS = {
-        "sidebar": 0,
-        "titlebar": 3,
-        "sheet": 4,
-        "menu": 5,
-        "popover": 6,
-        "contentBackground": 7,
-        "windowBackground": 8,
-        "underWindowBackground": 9,
-        "headerView": 11,
-        "hudWindow": 13,
+        "sidebar": NSVisualEffectMaterialSidebar,
+        "titlebar": NSVisualEffectMaterialTitlebar,
+        "sheet": NSVisualEffectMaterialSheet,
+        "menu": NSVisualEffectMaterialMenu,
+        "popover": NSVisualEffectMaterialPopover,
+        "contentBackground": NSVisualEffectMaterialContentBackground,
+        "windowBackground": NSVisualEffectMaterialWindowBackground,
+        "underWindowBackground": NSVisualEffectMaterialUnderWindowBackground,
+        "headerView": NSVisualEffectMaterialHeaderView,
+        "hudWindow": NSVisualEffectMaterialHUDWindow,
     }
 
     # State constants
@@ -149,12 +167,22 @@ class VibrancyHelper:
             raise RuntimeError("AppKit is not available")
 
         try:
+            # Force creation of native window handle if needed
+            win_id = int(qt_window.winId() or 0)
+            if win_id == 0:
+                # Window not yet created, force native creation
+                qt_window.winId()
+                win_id = int(qt_window.winId() or 0)
+
+            if win_id == 0:
+                raise RuntimeError("Failed to obtain valid native window handle")
+
             # Get native macOS window from Qt
-            ns_view = objc.objc_object(c_void_p=qt_window.winId().__int__())
+            ns_view = objc.objc_object(c_void_p=win_id)
             ns_window = ns_view.window()
 
             if ns_window is None:
-                raise RuntimeError("Failed to get native window")
+                raise RuntimeError("Failed to get native window from view")
 
             # Add visual effect view below all content
             content_view = ns_window.contentView()
@@ -236,8 +264,8 @@ class VibrancyHelper:
 
             if ns_window:
                 ns_window.setTitlebarAppearsTransparent_(True)
-                NSFullSizeContentViewWindowMask = 1 << 15
+                # Use symbolic constant instead of hard-coded bit mask
                 style_mask = ns_window.styleMask()
-                ns_window.setStyleMask_(style_mask | NSFullSizeContentViewWindowMask)
+                ns_window.setStyleMask_(style_mask | NSWindowStyleMaskFullSizeContentView)
         except Exception:
             pass

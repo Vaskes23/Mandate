@@ -23,6 +23,9 @@ def get_macos_version() -> tuple:
     """
     Get macOS version as a tuple of integers.
 
+    Handles macOS 11+ where platform.mac_ver() may return '10.16' (Rosetta)
+    or empty string. Falls back to Darwin version conversion.
+
     Returns:
         Tuple of (major, minor, patch) or None if not on macOS
 
@@ -34,10 +37,24 @@ def get_macos_version() -> tuple:
         return None
 
     try:
+        # Try platform.mac_ver() first
         version_str = platform.mac_ver()[0]
+
+        # macOS 11+ may return empty string or '10.16' under Rosetta
+        if not version_str or version_str == '10.16':
+            # Fall back to uname release (Darwin version)
+            # Darwin 20.x = macOS 11.x, Darwin 21.x = macOS 12.x, etc.
+            darwin_release = platform.uname().release
+            darwin_major = int(darwin_release.split('.')[0])
+
+            if darwin_major >= 20:
+                # Convert Darwin version to macOS version
+                macos_major = darwin_major - 9  # Darwin 20 = macOS 11
+                version_str = f"{macos_major}.0.0"
+
         version_parts = version_str.split(".")
         return tuple(int(part) for part in version_parts)
-    except (ValueError, IndexError):
+    except (ValueError, IndexError, AttributeError):
         return None
 
 

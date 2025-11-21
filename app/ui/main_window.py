@@ -169,10 +169,11 @@ class MainWindow(GlassMorphicWindow):
         alpha_label.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
 
         self.alpha_slider = QSlider(Qt.Horizontal)
-        self.alpha_slider.setMinimum(50)  # 50% = 0.5 alpha
-        self.alpha_slider.setMaximum(100)  # 100% = 1.0 alpha (fully opaque)
+        self.alpha_slider.setMinimum(0)  # 0% = fully transparent
+        self.alpha_slider.setMaximum(100)  # 100% = fully opaque
         self.alpha_slider.setValue(int(self.glass_config.window_alpha * 100))
-        self.alpha_slider.valueChanged.connect(self._on_alpha_changed)
+        # Use sliderReleased instead of valueChanged to reduce update frequency
+        self.alpha_slider.sliderReleased.connect(self._on_alpha_changed)
         self.alpha_slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 background: rgba(255, 255, 255, 0.2);
@@ -258,16 +259,14 @@ class MainWindow(GlassMorphicWindow):
             # Invalid material name, ignore
             pass
 
-    def _on_alpha_changed(self, value: int):
+    def _on_alpha_changed(self):
         """
-        Handle transparency slider change.
+        Handle transparency slider release.
 
         Creates a new GlassConfig with the updated alpha value and updates the window.
-
-        Args:
-            value: Slider value (50-100, representing alpha 0.5-1.0)
+        Uses sliderReleased signal to avoid updating on every pixel movement.
         """
-        alpha = value / 100.0
+        alpha = self.alpha_slider.value() / 100.0
         new_config = GlassConfig(
             material=self.glass_config.material,
             blending_mode=self.glass_config.blending_mode,
