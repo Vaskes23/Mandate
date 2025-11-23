@@ -1,0 +1,36 @@
+{
+	"detection": {
+		"min_contour_area": 20,
+		"max_contour_area": 500,
+		"mog2_history": 500,
+		"mog2_var_threshold": 16,
+		"blur_kernel_size": 5,
+		"morph_kernel_size": 2,
+		"morph_iterations": 2
+	},
+	"tracking": {
+		"max_disappeared": 40,
+		"max_distance": 120
+	},
+	"visualization": {
+		"show_trails": false,
+		"trail_length": 30,
+		"box_color": [
+			0,
+			255,
+			0
+		],
+		"text_color": [
+			255,
+			255,
+			255
+		],
+		"font_scale": 0.6,
+		"box_thickness": 2
+	},
+	"output": {
+		"show_display": true,
+		"save_video": true,
+		"display_fps": true
+	}
+}

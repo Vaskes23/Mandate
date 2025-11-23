@@ -5,3 +5,12 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Python
+scripts/venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated outputs
+output_tracked.mp4

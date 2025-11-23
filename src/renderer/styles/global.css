@@ -221,6 +221,47 @@ body {
   cursor: pointer;
 }
 
+.tracking-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.processing-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+  pointer-events: none;
+  z-index: 20;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 12px 24px;
+  border-radius: 6px;
+}
+
+.stats-overlay {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 15;
+  font-family: monospace;
+}
+
 .art-credits-left {
   position: absolute;
   bottom: 20px;
