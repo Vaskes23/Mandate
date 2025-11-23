@@ -1,228 +1,100 @@
-# Glass-Morphic macOS App
+# CompVision
 
-A Python desktop application demonstrating authentic glass-morphic (translucent blur) effects on macOS using NSVisualEffectView.
+A minimalist portfolio desktop application built with Electron and TypeScript, featuring a matte design aesthetic inspired by contemporary visual artist portfolios.
 
 ## Features
 
-- **Native macOS Blur**: Uses NSVisualEffectView for system-level glass effects
-- **Interactive Controls**: Adjust material type and transparency in real-time
-- **Clean Architecture**: Modular design that's easy to understand and extend
-- **Fully Documented**: Clear docstrings and comments throughout
+- **macOS-style title bar** with native traffic light controls
+- **Dual tab interface** (Agents/Editor)
+- **Matte color scheme** with light gray backgrounds and subtle shadows
+- **Portfolio layout** with navigation, hero section, and art showcase
+- **Orange gradient placeholder** for generative art displays
 
-## Requirements
+## Tech Stack
 
-- macOS 10.14 (Mojave) or later
-- Python 3.7+
+- **Electron** - Desktop application framework
+- **TypeScript** - Type-safe JavaScript
+- **React** - UI component library
+- **Webpack** - Module bundler
+- **CSS** - Custom styling (no framework dependencies)
 
-## Installation
+## Getting Started
 
 ### Prerequisites
 
-Before installing the application, ensure you have:
+- Node.js (v16 or higher)
+- npm
 
-1. **Xcode Command-Line Tools**
-
-   Required for building pyobjc native extensions:
-   ```bash
-   xcode-select --install
-   ```
-
-2. **macOS-Only Application**
-
-   This application requires macOS 10.14+ and will immediately exit on other platforms (Windows, Linux) with an error message.
-
-3. **Python Launcher** (Optional)
-
-   For best results on macOS, use `pythonw` instead of `python` to avoid potential GUI issues:
-   ```bash
-   pythonw main.py
-   ```
-
-   However, `python main.py` should work fine in most cases.
-
-### Installing Dependencies
-
-1. **Install Python packages:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-   Dependencies:
-   - PyQt5: GUI framework
-   - pyobjc: Python-to-macOS bridge
-   - pyobjc-framework-Cocoa: AppKit/NSVisualEffectView access
-
-## Usage
-
-### Running the Demo
+### Installation
 
 ```bash
-python main.py
+npm install
 ```
 
-### Interacting with the Window
+### Development
 
-- **Drag to move**: Click and drag anywhere
-- **Material selector**: Change blur style
-- **Transparency slider**: Adjust window opacity
-- **Close button**: Exit the application
+Run the app in development mode:
 
-### Creating Your Own Glass Window
+```bash
+npm start
+```
 
-```python
-from PyQt5.QtWidgets import QApplication
-from app.core.window import GlassMorphicWindow
-from app.config import GlassConfig, MaterialType, AppearanceMode
+Or run with hot-reload (requires additional setup):
 
-# Create custom configuration
-config = GlassConfig(
-    material=MaterialType.SIDEBAR,
-    window_alpha=0.95,
-    appearance=AppearanceMode.VIBRANT_DARK,
-)
+```bash
+npm run dev
+```
 
-# Create and show window
-app = QApplication([])
-window = GlassMorphicWindow(config)
-window.resize(800, 600)
-window.show()
-app.exec_()
+### Build
+
+Build the production version:
+
+```bash
+npm run build
+```
+
+### Package
+
+Create distributable packages:
+
+```bash
+npm run package
 ```
 
 ## Project Structure
 
 ```
 CompVision/
-├── main.py                      # Application entry point
-├── requirements.txt             # Python dependencies
-│
-└── app/
-    ├── config.py                # Glass effect configuration
-    │
-    ├── core/                    # Core functionality
-    │   ├── window.py            # GlassMorphicWindow base class
-    │   └── vibrancy.py          # NSVisualEffectView wrapper
-    │
-    ├── ui/                      # User interface
-    │   └── main_window.py       # Demo window
-    │
-    └── utils/                   # Utilities
-        └── macos_helpers.py     # Platform compatibility checks
+├── src/
+│   ├── main.ts              # Electron main process
+│   ├── preload.ts           # Preload script for IPC
+│   └── renderer/
+│       ├── index.html       # HTML entry point
+│       ├── index.tsx        # React entry point
+│       ├── App.tsx          # Main App component
+│       ├── components/      # React components
+│       │   ├── TitleBar.tsx
+│       │   ├── Navigation.tsx
+│       │   ├── HeroSection.tsx
+│       │   └── ArtPlaceholder.tsx
+│       └── styles/
+│           └── global.css   # Global styles
+├── dist/                    # Build output
+├── package.json
+├── tsconfig.json
+└── webpack.renderer.config.js
 ```
 
-## Architecture
+## Design
 
-### Core Components
+The application replicates a minimalist portfolio aesthetic with:
 
-1. **GlassMorphicWindow** (`app/core/window.py`)
-   - Reusable base class for glass-morphic windows
-   - Handles NSVisualEffectView setup and lifecycle
-   - Provides drag-to-move functionality
-
-2. **VibrancyHelper** (`app/core/vibrancy.py`)
-   - Python wrapper around NSVisualEffectView
-   - Manages PyObjC bridge to macOS APIs
-   - Type-safe interface to AppKit
-
-3. **GlassConfig** (`app/config.py`)
-   - Configuration class for glass effects
-   - Enums for material types, blending modes, appearance
-   - Easy to modify and extend
-
-### How It Works
-
-1. PyQt5 creates a frameless, transparent Qt window
-2. VibrancyHelper creates an NSVisualEffectView (native macOS blur)
-3. The blur view is positioned below all Qt widgets
-4. Qt's transparent background allows the blur to show through
-5. The result: authentic glass-morphic effects!
-
-## Configuration Options
-
-### Material Types
-
-```python
-MaterialType.SIDEBAR           # Standard sidebar (default)
-MaterialType.MENU              # Menu background
-MaterialType.POPOVER           # Popover style
-MaterialType.HUD_WINDOW        # Heads-up display
-MaterialType.CONTENT_BACKGROUND # Content area
-# ... and more
-```
-
-### Blending Modes
-
-```python
-BlendingMode.BEHIND_WINDOW  # Blur desktop behind window
-BlendingMode.WITHIN_WINDOW  # Blur window contents
-```
-
-### Appearance Modes
-
-```python
-AppearanceMode.VIBRANT_DARK  # Dark mode (recommended)
-AppearanceMode.VIBRANT_LIGHT # Light mode
-```
-
-### Example Configuration
-
-```python
-from app.config import GlassConfig, MaterialType, AppearanceMode
-
-config = GlassConfig(
-    material=MaterialType.HUD_WINDOW,
-    window_alpha=0.9,
-    appearance=AppearanceMode.VIBRANT_DARK,
-    emphasized=False
-)
-```
-
-## Extending the Application
-
-### Creating Custom Windows
-
-Subclass `GlassMorphicWindow` to create your own glass-morphic windows:
-
-```python
-from app.core.window import GlassMorphicWindow
-
-class MyWindow(GlassMorphicWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("My Glass Window")
-        # Add your UI components here
-```
-
-### Changing Glass Effect at Runtime
-
-```python
-from app.config import GlassConfig, MaterialType
-
-new_config = GlassConfig(material=MaterialType.MENU)
-window.update_glass_config(new_config)
-```
-
-## Troubleshooting
-
-**"AppKit is not available"**
-- Install pyobjc-framework-Cocoa: `pip install pyobjc-framework-Cocoa`
-
-**"This application requires macOS 10.14 or later"**
-- Upgrade macOS to Mojave (10.14) or newer
-
-**Window appears but no blur effect**
-- Ensure window is visible (not minimized)
-- Check that you're running on macOS 10.14+
+- **Title Bar**: White background (#FFFFFF) with macOS traffic lights
+- **Main Content**: Light gray matte background (#E8E8E8)
+- **Typography**: System fonts with careful spacing and sizing
+- **Orange Gradient**: Warm gradient from #FF8C42 to #FFCC99
+- **Subtle Interactions**: Hover states and smooth transitions
 
 ## License
 
-This project is provided as-is for educational purposes.
-
-## Technical Details
-
-- **PyQt5**: Cross-platform GUI framework
-- **PyObjC**: Python-to-Objective-C bridge
-- **NSVisualEffectView**: macOS native blur component
-- **AppKit**: macOS application framework
-
-The blur effect is created entirely by macOS using NSVisualEffectView, ensuring authentic system-level appearance that matches other macOS applications.
+MIT

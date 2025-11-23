@@ -1,0 +1,320 @@
+/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Helvetica', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+.app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #FFFFFF;
+  overflow: hidden;
+}
+
+/* Top Bar Styles */
+.title-bar {
+  height: auto;
+  background-color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  position: relative;
+  border-bottom: none;
+  /* padding: 50px 60px 0 60px; */
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.title-bar-drag-region {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  -webkit-app-region: drag;
+  pointer-events: auto;
+}
+
+.site-title {
+  font-size: 48px;
+  font-weight: 600;
+  color: #000000;
+  letter-spacing: -1px;
+  -webkit-app-region: no-drag;
+  position: relative;
+  z-index: 10;
+}
+
+.top-bar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  -webkit-app-region: no-drag;
+  position: relative;
+  z-index: 10;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.nav-link {
+  font-size: 16px;
+  color: #6B6B6B;
+  text-decoration: none;
+  font-weight: 400;
+  transition: color 0.2s ease;
+  cursor: pointer;
+}
+
+.nav-link:hover {
+  color: #000000;
+}
+
+.nav-separator {
+  margin: 0 4px;
+  color: #6B6B6B;
+  font-size: 16px;
+}
+
+.nav-cta {
+  font-size: 16px;
+  color: #000000;
+  text-decoration: underline;
+  font-weight: 400;
+  margin-left: 40px;
+  transition: opacity 0.2s ease;
+  cursor: pointer;
+}
+
+.nav-cta:hover {
+  opacity: 0.6;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Navigation - Now hidden, integrated into top bar */
+.navigation {
+  display: none;
+}
+
+/* Hero Section */
+.hero-section {
+  text-align: left;
+  padding: 80px 0 0 0;
+  flex-shrink: 0;
+  max-width: 620px;
+}
+
+.hero-text {
+  font-size: 28px;
+  line-height: 1.45;
+  color: #000000;
+  font-weight: 400;
+  letter-spacing: -0.4px;
+}
+
+/* Art Container */
+.art-container {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin-top: 50px;
+}
+
+.art-metadata-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  flex-shrink: 0;
+}
+
+.art-metadata-left {
+  flex: 0 0 auto;
+}
+
+.art-metadata-center {
+  flex: 1;
+  text-align: center;
+}
+
+.art-metadata-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.art-number {
+  font-size: 16px;
+  color: #000000;
+  font-weight: 400;
+}
+
+.art-title {
+  font-size: 16px;
+  color: #000000;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  margin: 0;
+}
+
+.art-category {
+  font-size: 16px;
+  color: #6B6B6B;
+  font-weight: 400;
+}
+
+.arrow-icon {
+  color: #6B6B6B;
+  transition: transform 0.2s ease;
+  width: 16px;
+  height: 16px;
+}
+
+.art-metadata-right:hover .arrow-icon {
+  transform: translate(2px, -2px);
+  color: #000000;
+}
+
+.art-metadata-right:hover .art-category {
+  color: #000000;
+}
+
+.art-placeholder {
+  width: 100%;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  background-color: #000000;
+}
+
+.art-video {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.art-credits-left {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 400;
+  background-color: transparent;
+  padding: 0;
+  z-index: 10;
+}
+
+.scroll-indicator {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 400;
+  background-color: transparent;
+  padding: 0;
+  z-index: 10;
+}
+
+/* Scrollbar Styling - Hidden */
+.main-content::-webkit-scrollbar {
+  width: 0;
+  display: none;
+}
+
+.main-content {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* Responsive Media Queries */
+@media (max-width: 768px) {
+  .title-bar {
+    padding: 30px 24px 0 24px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+  }
+
+  .site-title {
+    font-size: 36px;
+  }
+
+  .top-bar-nav {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .nav-cta {
+    margin-left: 20px;
+  }
+
+
+  .hero-section {
+    padding: 40px 0 0 0;
+    max-width: 100%;
+  }
+
+  .hero-text {
+    font-size: 24px;
+    line-height: 1.4;
+  }
+
+  .art-container {
+    margin-top: 30px;
+  }
+
+  .art-metadata-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .art-metadata-center {
+    text-align: left;
+  }
+
+  .art-credits-left,
+  .scroll-indicator {
+    font-size: 12px;
+    bottom: 12px;
+  }
+
+  .art-credits-left {
+    left: 12px;
+  }
+
+  .scroll-indicator {
+    right: 12px;
+  }
+}

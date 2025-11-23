@@ -1,0 +1,57 @@
+{
+  "name": "compvision",
+  "version": "1.0.0",
+  "description": "A visual artist portfolio app with matte design",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run watch:main\" \"npm run watch:renderer\" \"wait-on dist/main.js dist/renderer/index.html && electron .\"",
+    "watch:main": "tsc -p tsconfig.main.json --watch",
+    "watch:renderer": "webpack --config webpack.renderer.config.js --watch",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "webpack --config webpack.renderer.config.js --mode production",
+    "build": "npm run build:main && npm run build:renderer",
+    "start": "npm run build && electron .",
+    "package": "npm run build && electron-builder"
+  },
+  "keywords": [
+    "electron",
+    "typescript",
+    "portfolio"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.42",
+    "@types/react-dom": "^18.2.17",
+    "concurrently": "^8.2.2",
+    "css-loader": "^6.8.1",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "html-webpack-plugin": "^5.5.4",
+    "style-loader": "^3.3.3",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.2",
+    "wait-on": "^7.2.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "build": {
+    "appId": "com.compvision.app",
+    "productName": "CompVision",
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "files": [
+      "dist/**/*"
+    ]
+  }
+}
