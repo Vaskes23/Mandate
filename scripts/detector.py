@@ -95,6 +95,16 @@ class BirdDetector:
         self.morph_kernel = config['detection']['morph_kernel_size']
         self.morph_iterations = config['detection']['morph_iterations']
 
+        # Spatial filter configuration
+        self.spatial_filter_enabled = config.get('spatial_filter', {}).get('enabled', False)
+        horizon_percent = config.get('spatial_filter', {}).get('horizon_line_percent', 0.70)
+
+        # Validate and clamp horizon_line_percent to [0, 1]
+        if not (0.0 <= horizon_percent <= 1.0):
+            print(f"WARNING: horizon_line_percent={horizon_percent} out of range [0.0, 1.0], clamping to valid range")
+            horizon_percent = max(0.0, min(1.0, horizon_percent))
+        self.horizon_line_percent = horizon_percent
+
         # Initialize background subtractor
         self.bg_subtractor = BackgroundSubtractor(
             history=config['detection']['mog2_history'],
@@ -155,17 +165,21 @@ class BirdDetector:
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         return contours
 
-    def filter_contours(self, contours: List[np.ndarray]) -> List[Tuple[int, int, int, int]]:
+    def filter_contours(self, contours: List[np.ndarray], frame_height: int) -> List[Tuple[int, int, int, int]]:
         """
-        Filter contours by area and return bounding boxes.
+        Filter contours by area and spatial location (horizon line).
 
         Args:
             contours: List of contours
+            frame_height: Height of the frame for horizon line calculation
 
         Returns:
             List of bounding boxes (x, y, w, h) for valid birds
         """
         valid_boxes = []
+
+        # Calculate horizon line Y-coordinate (objects below this line are filtered out)
+        horizon_line_y = int(frame_height * self.horizon_line_percent) if self.spatial_filter_enabled else frame_height
 
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -173,7 +187,13 @@ class BirdDetector:
             # Filter by area to eliminate noise and very large objects
             if self.min_area <= area <= self.max_area:
                 x, y, w, h = cv2.boundingRect(contour)
-                valid_boxes.append((x, y, w, h))
+
+                # Calculate centroid Y-coordinate
+                cy = y + h // 2
+
+                # Apply spatial filter: only accept detections above horizon line
+                if cy < horizon_line_y:
+                    valid_boxes.append((x, y, w, h))
 
         return valid_boxes
 
@@ -189,6 +209,9 @@ class BirdDetector:
             - bounding_boxes: List of (x, y, w, h) tuples
             - visualization_mask: Binary mask for debugging
         """
+        # Get frame dimensions
+        frame_height = frame.shape[0]
+
         # Step 1: Preprocess (blur)
         preprocessed = self.preprocess_frame(frame)
 
@@ -201,8 +224,8 @@ class BirdDetector:
         # Step 4: Find contours
         contours = self.find_contours(cleaned_mask)
 
-        # Step 5: Filter and extract bounding boxes
-        bounding_boxes = self.filter_contours(contours)
+        # Step 5: Filter and extract bounding boxes with spatial filtering
+        bounding_boxes = self.filter_contours(contours, frame_height)
 
         return bounding_boxes, cleaned_mask
 

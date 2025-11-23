@@ -43,7 +43,8 @@ class BirdTrackingSystem:
         self.detector = BirdDetector(self.config)
         self.tracker = CentroidTracker(
             max_disappeared=self.config['tracking']['max_disappeared'],
-            max_distance=self.config['tracking']['max_distance']
+            max_distance=self.config['tracking']['max_distance'],
+            config=self.config
         )
 
         # Visualization config

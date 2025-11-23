@@ -12,6 +12,15 @@
 		"max_disappeared": 40,
 		"max_distance": 120
 	},
+	"spatial_filter": {
+		"enabled": true,
+		"horizon_line_percent": 0.70
+	},
+	"temporal_filter": {
+		"enabled": true,
+		"min_confirm_frames": 15,
+		"min_move_distance": 50.0
+	},
 	"visualization": {
 		"show_trails": false,
 		"trail_length": 30,
