@@ -116,22 +116,6 @@ body {
   display: none;
 }
 
-/* Hero Section */
-.hero-section {
-  text-align: left;
-  padding: 80px 0 0 0;
-  flex-shrink: 0;
-  max-width: 620px;
-}
-
-.hero-text {
-  font-size: 28px;
-  line-height: 1.45;
-  color: #000000;
-  font-weight: 400;
-  letter-spacing: -0.4px;
-}
-
 /* Art Container */
 .art-container {
   position: relative;
@@ -151,6 +135,14 @@ body {
 
 .art-metadata-left {
   flex: 0 0 auto;
+  position: relative;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+.art-metadata-left input {
+  pointer-events: auto;
+  cursor: text;
 }
 
 .art-metadata-center {
@@ -317,17 +309,6 @@ body {
 
   .nav-cta {
     margin-left: 20px;
-  }
-
-
-  .hero-section {
-    padding: 40px 0 0 0;
-    max-width: 100%;
-  }
-
-  .hero-text {
-    font-size: 24px;
-    line-height: 1.4;
   }
 
   .art-container {

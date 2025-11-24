@@ -126,6 +126,23 @@ function setupBirdTrackingHandlers() {
       return { success: false, error: String(error) };
     }
   });
+
+  // Set selected bird for tracking output
+  ipcMain.handle('bird-tracking:set-selected-bird', async (_event, birdId: number | null) => {
+    try {
+      if (pythonProcess && pythonProcess.stdin) {
+        const command = JSON.stringify({
+          action: 'set_selected_bird',
+          bird_id: birdId
+        }) + '\n';
+        pythonProcess.stdin.write(command);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to set selected bird:', error);
+      return { success: false, error: String(error) };
+    }
+  });
 }
 
 app.whenReady().then(() => {

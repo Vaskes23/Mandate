@@ -31,6 +31,14 @@ export const ArtPlaceholder: React.FC = () => {
   const [trackingDataMap, setTrackingDataMap] = useState<Map<number, TrackingData>>(new Map());
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [currentStats, setCurrentStats] = useState({ current: 0, total: 0 });
+  const [selectedBirdId, setSelectedBirdId] = useState<number | null>(null);
+
+  // Notify backend when selected bird changes
+  useEffect(() => {
+    if (isProcessing || isProcessed) {
+      (window as any).electron?.birdTracking?.setSelectedBird?.(selectedBirdId);
+    }
+  }, [selectedBirdId, isProcessing, isProcessed]);
   const animationFrameRef = useRef<number>();
 
   useEffect(() => {
@@ -102,9 +110,13 @@ export const ArtPlaceholder: React.FC = () => {
 
           // Draw bounding boxes and IDs
           trackingData.objects.forEach(bird => {
+            // Determine color based on selection
+            const isSelected = bird.id === selectedBirdId;
+            const color = isSelected ? '#9F00FF' : '#00FF00';
+
             // Draw bounding box
-            ctx.strokeStyle = '#00FF00';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isSelected ? 3 : 2;
             ctx.strokeRect(bird.x, bird.y, bird.w, bird.h);
 
             // Draw ID label with background
@@ -114,7 +126,7 @@ export const ArtPlaceholder: React.FC = () => {
             const textHeight = 16;
 
             // Background rectangle
-            ctx.fillStyle = '#00FF00';
+            ctx.fillStyle = color;
             ctx.fillRect(bird.x, bird.y - textHeight - 4, textMetrics.width + 8, textHeight + 4);
 
             // Text
@@ -140,7 +152,7 @@ export const ArtPlaceholder: React.FC = () => {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isProcessed, trackingDataMap, videoMetadata]);
+  }, [isProcessed, trackingDataMap, videoMetadata, selectedBirdId]);
 
   const handleVideoClick = async () => {
     if (videoRef.current) {
@@ -189,7 +201,23 @@ export const ArtPlaceholder: React.FC = () => {
     <div className="art-container">
       <div className="art-metadata-row">
         <div className="art-metadata-left">
-          <span className="art-number">(001)</span>
+        Select ID: <input
+              type="number"
+              value={selectedBirdId ?? ''}
+              onChange={(e) => setSelectedBirdId(e.target.value ? Number(e.target.value) : null)}
+              placeholder="ID"
+              style={{
+                width: '60px',
+                marginLeft: '8px',
+                padding: '4px 8px',
+                fontSize: '14px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                color: '#ffffff',
+                outline: 'none'
+              }}
+            />
         </div>
         <div className="art-metadata-center">
           <h2 className="art-title">Berlin Karl-Marx-Allee</h2>
@@ -225,7 +253,7 @@ export const ArtPlaceholder: React.FC = () => {
 
         {isProcessed && (
           <div className="stats-overlay">
-            Current Birds: {currentStats.current} | Total: {currentStats.total}
+            Current Birds: {currentStats.current} | Total: {currentStats.total} |
           </div>
         )}
       </div>

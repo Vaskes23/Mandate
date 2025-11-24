@@ -5,9 +5,8 @@ A minimalist portfolio desktop application built with Electron and TypeScript, f
 ## Features
 
 - **macOS-style title bar** with native traffic light controls
-- **Dual tab interface** (Agents/Editor)
 - **Matte color scheme** with light gray backgrounds and subtle shadows
-- **Portfolio layout** with navigation, hero section, and art showcase
+- **Portfolio layout** with navigation and art showcase
 - **Orange gradient placeholder** for generative art displays
 
 ## Tech Stack
@@ -75,7 +74,6 @@ CompVision/
 │       ├── components/      # React components
 │       │   ├── TitleBar.tsx
 │       │   ├── Navigation.tsx
-│       │   ├── HeroSection.tsx
 │       │   └── ArtPlaceholder.tsx
 │       └── styles/
 │           └── global.css   # Global styles

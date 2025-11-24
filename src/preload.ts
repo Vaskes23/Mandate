@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('electron', {
     stop: () =>
       ipcRenderer.invoke('bird-tracking:stop'),
 
+    setSelectedBird: (birdId: number | null) =>
+      ipcRenderer.invoke('bird-tracking:set-selected-bird', birdId),
+
     onFrameData: (callback: (data: any) => void) => {
       ipcRenderer.on('bird-tracking:frame-data', (_event, data) => callback(data));
       return () => ipcRenderer.removeAllListeners('bird-tracking:frame-data');

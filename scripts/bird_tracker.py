@@ -51,6 +51,9 @@ class BirdTrackingSystem:
         self.vis_config = self.config['visualization']
         self.output_config = self.config['output']
 
+        # Selected bird for console output (IPC mode)
+        self.selected_bird_id = None
+
     def _load_config(self, config_path: str) -> dict:
         """
         Load configuration from JSON file.
@@ -474,6 +477,11 @@ def run_ipc_mode(args):
                     'results': results
                 }
                 print(json.dumps(output), flush=True)
+
+            elif command['action'] == 'set_selected_bird':
+                # Update selected bird ID
+                bird_id = command.get('bird_id')
+                tracker.selected_bird_id = bird_id
 
             elif command['action'] == 'stop':
                 # Stop processing (would need threading for proper implementation)
