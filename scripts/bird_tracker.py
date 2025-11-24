@@ -120,7 +120,7 @@ class BirdTrackingSystem:
                 centroids = self.detector.get_centroids(bounding_boxes)
 
                 # Update tracker
-                objects = self.tracker.update(centroids)
+                objects, detection_indices = self.tracker.update(centroids)
 
                 # Update statistics
                 stats = self.tracker.get_statistics()
@@ -141,18 +141,14 @@ class BirdTrackingSystem:
                     }
                 }
 
-                # Add bird objects with bounding boxes
-                box_lookup = {}
-                for (x, y, w, h) in bounding_boxes:
-                    cx, cy = x + w // 2, y + h // 2
-                    box_lookup[(cx, cy)] = (x, y, w, h)
-
+                # Add bird objects with bounding boxes using detection indices
                 for object_id, centroid in objects.items():
                     cx, cy = int(centroid[0]), int(centroid[1])
-                    box = box_lookup.get((cx, cy))
 
-                    if box:
-                        x, y, w, h = box
+                    # Find corresponding bounding box using detection index
+                    detection_idx = detection_indices.get(object_id)
+                    if detection_idx is not None and detection_idx < len(bounding_boxes):
+                        x, y, w, h = bounding_boxes[detection_idx]
                         tracking_data['objects'].append({
                             'id': object_id,
                             'x': x,
@@ -228,10 +224,10 @@ class BirdTrackingSystem:
                 centroids = self.detector.get_centroids(bounding_boxes)
 
                 # Update tracker
-                objects = self.tracker.update(centroids)
+                objects, detection_indices = self.tracker.update(centroids)
 
                 # Visualize
-                annotated_frame = self._visualize(frame, objects, bounding_boxes)
+                annotated_frame = self._visualize(frame, objects, bounding_boxes, detection_indices)
 
                 # Update statistics
                 stats = self.tracker.get_statistics()
@@ -269,7 +265,8 @@ class BirdTrackingSystem:
         return processing_stats
 
     def _visualize(self, frame: np.ndarray, objects: Dict[int, np.ndarray],
-                   bounding_boxes: List[Tuple[int, int, int, int]]) -> np.ndarray:
+                   bounding_boxes: List[Tuple[int, int, int, int]],
+                   detection_indices: Dict[int, int]) -> np.ndarray:
         """
         Draw bounding boxes, IDs, and statistics on frame.
 
@@ -283,21 +280,14 @@ class BirdTrackingSystem:
         """
         annotated = frame.copy()
 
-        # Create bounding box lookup by centroid
-        box_lookup = {}
-        for (x, y, w, h) in bounding_boxes:
-            cx, cy = x + w // 2, y + h // 2
-            box_lookup[(cx, cy)] = (x, y, w, h)
-
-        # Draw each tracked object
+        # Draw each tracked object using detection indices
         for object_id, centroid in objects.items():
             cx, cy = int(centroid[0]), int(centroid[1])
 
-            # Find corresponding bounding box
-            box = box_lookup.get((cx, cy))
-
-            if box:
-                x, y, w, h = box
+            # Find corresponding bounding box using detection index
+            detection_idx = detection_indices.get(object_id)
+            if detection_idx is not None and detection_idx < len(bounding_boxes):
+                x, y, w, h = bounding_boxes[detection_idx]
 
                 # Draw bounding box
                 color = tuple(self.vis_config['box_color'])

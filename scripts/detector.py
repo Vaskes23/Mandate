@@ -180,6 +180,17 @@ class BirdDetector:
             width = zone.get('width', 0)
             height = zone.get('height', 0)
 
+            # Clip zone coordinates to frame dimensions to prevent crashes
+            frame_height, frame_width = masked.shape[:2]
+            x = max(0, min(x, frame_width))
+            y = max(0, min(y, frame_height))
+            width = min(width, frame_width - x)
+            height = min(height, frame_height - y)
+
+            # Skip invalid zones
+            if width <= 0 or height <= 0:
+                continue
+
             # Set the rectangular region to 0 (black) - no detections in this area
             cv2.rectangle(masked, (x, y), (x + width, y + height), 0, -1)
 

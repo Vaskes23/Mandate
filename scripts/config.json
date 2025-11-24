@@ -1,11 +1,11 @@
 {
 	"detection": {
-		"min_contour_area": 20,
+		"min_contour_area": 0.1,
 		"max_contour_area": 500,
 		"mog2_history": 500,
-		"mog2_var_threshold": 16,
+		"mog2_var_threshold": 25,
 		"blur_kernel_size": 5,
-		"morph_kernel_size": 2,
+		"morph_kernel_size": 3,
 		"morph_iterations": 2
 	},
 	"tracking": {
@@ -22,9 +22,16 @@
 		"min_move_distance": 50.0
 	},
 	"exclusion_zones": {
-		"enabled": false,
-		"zones": [],
-		"draw_debug": false
+		"enabled": true,
+		"zones": [
+			{
+				"x": 910,
+				"y": 180,
+				"width": 100,
+				"height": 900
+			}
+		],
+		"draw_debug": true
 	},
 	"visualization": {
 		"show_trails": false,

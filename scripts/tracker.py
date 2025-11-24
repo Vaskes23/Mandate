@@ -169,7 +169,7 @@ class CentroidTracker:
         # This catches both straight-line flyers and birds that circle/hover
         return cumulative_distance >= self.min_move_distance or net_displacement >= self.min_move_distance
 
-    def update(self, input_centroids: np.ndarray) -> Dict[int, np.ndarray]:
+    def update(self, input_centroids: np.ndarray) -> Tuple[Dict[int, np.ndarray], Dict[int, int]]:
         """
         Update tracker with new detections using Hungarian algorithm.
         Implements two-phase tracking: probationary validation, then confirmed tracking.
@@ -178,11 +178,16 @@ class CentroidTracker:
             input_centroids: Array of shape (N, 2) with new centroid coordinates
 
         Returns:
-            Dictionary mapping {object_id: centroid} for confirmed objects only
+            Tuple of (objects, detection_indices) where:
+            - objects: Dictionary mapping {object_id: centroid} for confirmed objects only
+            - detection_indices: Dictionary mapping {object_id: detection_index} for matched detections
         """
         # If temporal filtering is disabled, use original behavior
         if not self.temporal_filter_enabled:
             return self._update_without_temporal_filter(input_centroids)
+
+        # Track which detection index corresponds to each tracked object
+        detection_indices = {}
 
         # Phase 1: Handle no detections case
         if len(input_centroids) == 0:
@@ -198,7 +203,7 @@ class CentroidTracker:
                 if self.probationary_disappeared[prob_id] > self.probationary_max_disappeared:
                     self.deregister_probationary(prob_id)
 
-            return self.objects
+            return self.objects, detection_indices
 
         # Phase 2: Match confirmed objects with detections
         remaining_centroids = input_centroids.copy()
@@ -221,6 +226,8 @@ class CentroidTracker:
                     self.trajectories[object_id].append(tuple(remaining_centroids[col]))
                     used_rows.add(row)
                     used_detection_indices.add(col)
+                    # Store detection index for this object
+                    detection_indices[object_id] = col
 
             # Handle unmatched confirmed objects
             unused_rows = set(range(len(object_ids))) - used_rows
@@ -283,9 +290,9 @@ class CentroidTracker:
         for idx in final_remaining_indices:
             self.register_probationary(remaining_centroids[idx])
 
-        return self.objects
+        return self.objects, detection_indices
 
-    def _update_without_temporal_filter(self, input_centroids: np.ndarray) -> Dict[int, np.ndarray]:
+    def _update_without_temporal_filter(self, input_centroids: np.ndarray) -> Tuple[Dict[int, np.ndarray], Dict[int, int]]:
         """
         Original update logic without temporal filtering (for backwards compatibility).
 
@@ -293,21 +300,27 @@ class CentroidTracker:
             input_centroids: Array of shape (N, 2) with new centroid coordinates
 
         Returns:
-            Dictionary mapping {object_id: centroid}
+            Tuple of (objects, detection_indices) where:
+            - objects: Dictionary mapping {object_id: centroid}
+            - detection_indices: Dictionary mapping {object_id: detection_index} for matched detections
         """
+        # Track which detection index corresponds to each tracked object
+        detection_indices = {}
+
         # Case 1: No detections - mark all as disappeared
         if len(input_centroids) == 0:
             for object_id in list(self.disappeared.keys()):
                 self.disappeared[object_id] += 1
                 if self.disappeared[object_id] > self.max_disappeared:
                     self.deregister(object_id)
-            return self.objects
+            return self.objects, detection_indices
 
         # Case 2: No existing objects - register all detections
         if len(self.objects) == 0:
-            for centroid in input_centroids:
-                self.register(centroid)
-            return self.objects
+            for idx, centroid in enumerate(input_centroids):
+                object_id = self.register(centroid)
+                detection_indices[object_id] = idx
+            return self.objects, detection_indices
 
         # Case 3: Match existing objects to new detections
         object_ids = list(self.objects.keys())
@@ -327,6 +340,8 @@ class CentroidTracker:
                 self.trajectories[object_id].append(tuple(input_centroids[col]))
                 used_rows.add(row)
                 used_cols.add(col)
+                # Store detection index for this object
+                detection_indices[object_id] = col
 
         unused_rows = set(range(len(object_ids))) - used_rows
         unused_cols = set(range(len(input_centroids))) - used_cols
@@ -338,9 +353,10 @@ class CentroidTracker:
                 self.deregister(object_id)
 
         for col in unused_cols:
-            self.register(input_centroids[col])
+            object_id = self.register(input_centroids[col])
+            detection_indices[object_id] = col
 
-        return self.objects
+        return self.objects, detection_indices
 
     def _compute_distance_matrix(self, centroids_a: np.ndarray, centroids_b: np.ndarray) -> np.ndarray:
         """
