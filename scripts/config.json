@@ -21,6 +21,11 @@
 		"min_confirm_frames": 15,
 		"min_move_distance": 50.0
 	},
+	"exclusion_zones": {
+		"enabled": false,
+		"zones": [],
+		"draw_debug": false
+	},
 	"visualization": {
 		"show_trails": false,
 		"trail_length": 30,

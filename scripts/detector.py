@@ -105,6 +105,11 @@ class BirdDetector:
             horizon_percent = max(0.0, min(1.0, horizon_percent))
         self.horizon_line_percent = horizon_percent
 
+        # Exclusion zones configuration (static masking for lamp posts, etc.)
+        self.exclusion_zones_enabled = config.get('exclusion_zones', {}).get('enabled', False)
+        self.exclusion_zones = config.get('exclusion_zones', {}).get('zones', [])
+        self.draw_exclusion_zones = config.get('exclusion_zones', {}).get('draw_debug', False)
+
         # Initialize background subtractor
         self.bg_subtractor = BackgroundSubtractor(
             history=config['detection']['mog2_history'],
@@ -151,6 +156,34 @@ class BirdDetector:
                                   iterations=self.morph_iterations)
 
         return closed
+
+    def apply_exclusion_mask(self, mask: np.ndarray) -> np.ndarray:
+        """
+        Apply exclusion zones to foreground mask (masks out static obstacles like lamp posts).
+
+        Args:
+            mask: Binary foreground mask
+
+        Returns:
+            Masked foreground with exclusion zones set to 0 (black)
+        """
+        if not self.exclusion_zones_enabled or not self.exclusion_zones:
+            return mask
+
+        # Create a copy to avoid modifying the original
+        masked = mask.copy()
+
+        # Apply each exclusion zone
+        for zone in self.exclusion_zones:
+            x = zone.get('x', 0)
+            y = zone.get('y', 0)
+            width = zone.get('width', 0)
+            height = zone.get('height', 0)
+
+            # Set the rectangular region to 0 (black) - no detections in this area
+            cv2.rectangle(masked, (x, y), (x + width, y + height), 0, -1)
+
+        return masked
 
     def find_contours(self, mask: np.ndarray) -> List[np.ndarray]:
         """
@@ -217,6 +250,9 @@ class BirdDetector:
 
         # Step 2: Background subtraction
         fg_mask = self.bg_subtractor.apply(preprocessed)
+
+        # Step 2.5: Apply exclusion zones (mask out static obstacles like lamp posts)
+        fg_mask = self.apply_exclusion_mask(fg_mask)
 
         # Step 3: Morphological operations
         cleaned_mask = self.apply_morphology(fg_mask)

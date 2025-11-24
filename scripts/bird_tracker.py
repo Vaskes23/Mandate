@@ -331,6 +331,10 @@ class BirdTrackingSystem:
                     pts = np.array(trajectory, dtype=np.int32)
                     cv2.polylines(annotated, [pts], False, (255, 0, 0), 2)
 
+        # Draw exclusion zones if debug mode enabled
+        if self.detector.draw_exclusion_zones and self.detector.exclusion_zones_enabled:
+            self._draw_exclusion_zones(annotated)
+
         # Draw statistics
         stats = self.tracker.get_statistics()
         self._draw_statistics(annotated, stats)
@@ -358,6 +362,36 @@ class BirdTrackingSystem:
                    (20, 40), font, font_scale, color, thickness)
         cv2.putText(frame, f"Total Birds Detected: {stats['total_birds_seen']}",
                    (20, 75), font, font_scale, color, thickness)
+
+    def _draw_exclusion_zones(self, frame: np.ndarray):
+        """
+        Draw semi-transparent rectangles over exclusion zones for debugging.
+
+        Args:
+            frame: Frame to draw on
+        """
+        # Create overlay for semi-transparency
+        overlay = frame.copy()
+
+        for zone in self.detector.exclusion_zones:
+            x = zone.get('x', 0)
+            y = zone.get('y', 0)
+            width = zone.get('width', 0)
+            height = zone.get('height', 0)
+
+            # Draw filled rectangle on overlay
+            cv2.rectangle(overlay, (x, y), (x + width, y + height), (0, 0, 255), -1)
+
+            # Draw border
+            cv2.rectangle(frame, (x, y), (x + width, y + height), (0, 0, 255), 2)
+
+            # Add label
+            label = "EXCLUSION ZONE"
+            cv2.putText(frame, label, (x + 5, y + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+        # Blend overlay with original frame (30% opacity)
+        cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
 
 
 def run_cli_mode(args):
