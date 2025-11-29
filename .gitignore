@@ -14,3 +14,9 @@ __pycache__/
 
 # Generated outputs
 output_tracked.mp4
+
+# Linter caches
+.eslintcache
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/

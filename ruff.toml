@@ -1,0 +1,62 @@
+# Ruff configuration for Python linting
+target-version = "py39"
+
+# Exclude directories from linting
+exclude = [
+    ".git",
+    "__pycache__",
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+]
+
+[lint]
+# Enable specific linting rule sets
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (import sorting)
+    "N",     # pep8-naming (enforce naming conventions)
+    "UP",    # pyupgrade (modern Python idioms)
+    "B",     # flake8-bugbear (likely bugs)
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "RUF",   # Ruff-specific rules
+]
+
+# Disable specific rules
+ignore = [
+    "E501",  # Line too long (handled by formatter)
+]
+
+# Allow auto-fixing of all enabled rules (except those excluded below)
+fixable = ["ALL"]
+
+# Rules that should not be auto-fixed
+unfixable = []
+
+# Per-file ignores for specific patterns
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+"test_*.py" = ["S101"]    # Allow assert statements in tests
+
+# Enforce descriptive variable names
+[lint.pep8-naming]
+# Enforce minimum variable name length (must be at least 3 characters)
+# Exceptions: i, j, k for loops, x, y for coordinates, id for identifiers
+# Note: Ruff doesn't have built-in min-length enforcement, but N806 helps
+
+[format]
+# Use single quotes for strings
+quote-style = "single"
+
+# Use spaces for indentation
+indent-style = "space"
+
+# Auto-detect line endings
+line-ending = "auto"
+
+# Skip magic trailing commas
+skip-magic-trailing-comma = false

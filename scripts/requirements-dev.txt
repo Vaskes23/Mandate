@@ -1,0 +1,11 @@
+# Development dependencies for Python code quality
+# Install with: pip install -r requirements-dev.txt
+
+# Linting and formatting
+ruff>=0.1.0
+
+# Type checking
+mypy>=1.0.0
+
+# Type stubs for third-party libraries
+types-setuptools

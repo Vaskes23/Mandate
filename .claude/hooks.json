@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "user-prompt-submit-hook": {
+      "description": "Run linters with auto-fix before each Claude Code operation",
+      "command": "bash",
+      "args": [
+        "-c",
+        "echo '🔍 Running linters with auto-fix...' && npm run lint:fix:all || (echo '❌ Linting failed! Please fix errors before proceeding.' && exit 1)"
+      ]
+    },
+    "edit-hook": {
+      "description": "Run linters with auto-fix after editing TypeScript/JavaScript files",
+      "file_pattern": "\\.(ts|tsx|js|jsx)$",
+      "command": "bash",
+      "args": [
+        "-c",
+        "echo '🔍 Running TypeScript linter with auto-fix...' && npm run lint:ts:fix || (echo '❌ TypeScript linting failed!' && exit 1)"
+      ]
+    },
+    "edit-python-hook": {
+      "description": "Run Python linters with auto-fix after editing Python files",
+      "file_pattern": "\\.py$",
+      "command": "bash",
+      "args": [
+        "-c",
+        "echo '🔍 Running Python linters with auto-fix...' && cd scripts && ./venv/bin/ruff check . --fix && ./venv/bin/mypy . || (echo '❌ Python linting/type-checking failed!' && exit 1)"
+      ]
+    }
+  }
+}
