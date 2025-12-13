@@ -41,41 +41,6 @@ class BackgroundSubtractor:
         return self.bg_subtractor.apply(frame)
 
 
-class ColorThresholder:
-    """
-    HSV color-based thresholding as alternative to background subtraction.
-    Useful when sky color is very uniform.
-    """
-
-    def __init__(self, lower_hsv: Tuple[int, int, int] = (100, 50, 50),
-                 upper_hsv: Tuple[int, int, int] = (130, 255, 255)):
-        """
-        Initialize color thresholder for blue sky.
-
-        Args:
-            lower_hsv: Lower HSV bounds for sky color
-            upper_hsv: Upper HSV bounds for sky color
-        """
-        self.lower_hsv = np.array(lower_hsv)
-        self.upper_hsv = np.array(upper_hsv)
-
-    def apply(self, frame: np.ndarray) -> np.ndarray:
-        """
-        Apply color thresholding to isolate non-sky objects.
-
-        Args:
-            frame: Input frame (BGR)
-
-        Returns:
-            Binary mask where birds are white, sky is black
-        """
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        sky_mask = cv2.inRange(hsv, self.lower_hsv, self.upper_hsv)
-        # Invert to get birds (non-sky objects)
-        bird_mask = cv2.bitwise_not(sky_mask)
-        return bird_mask
-
-
 class BirdDetector:
     """
     Complete bird detection pipeline using background subtraction and morphological ops.
