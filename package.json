@@ -67,7 +67,19 @@
       ]
     },
     "files": [
-      "dist/**/*"
+      "dist/**/*",
+      "scripts/**/*",
+      "!scripts/venv/**/*",
+      "!scripts/__pycache__/**/*",
+      "!scripts/**/*.pyc",
+      "!scripts/tests/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts",
+        "to": "scripts",
+        "filter": ["*.py", "*.json", "requirements.txt"]
+      }
     ]
   }
 }

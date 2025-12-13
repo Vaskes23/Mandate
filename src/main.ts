@@ -1,9 +1,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
+import { getPythonPath, getScriptPath } from './config/app.config';
 
 let mainWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
+
+// Determine if running in development or production
+const isDevelopment = !app.isPackaged;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -42,9 +46,9 @@ function setupBirdTrackingHandlers() {
         pythonProcess = null;
       }
 
-      // Get Python script path and venv python
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'bird_tracker.py');
-      const venvPython = path.join(__dirname, '..', 'scripts', 'venv', 'bin', 'python3');
+      // Get Python script path and venv python (platform-specific)
+      const scriptPath = getScriptPath(isDevelopment);
+      const venvPython = getPythonPath(isDevelopment);
 
       // Spawn Python process in IPC mode using venv
       pythonProcess = spawn(venvPython, [scriptPath, '--ipc'], {
@@ -107,17 +111,29 @@ function setupBirdTrackingHandlers() {
   ipcMain.handle('bird-tracking:stop', async () => {
     try {
       if (pythonProcess) {
-        // Send stop command
+        // Send stop command via stdin first
         const stopCommand = JSON.stringify({ action: 'stop' }) + '\n';
         pythonProcess.stdin?.write(stopCommand);
 
-        // Give it time to gracefully exit
-        setTimeout(() => {
-          if (pythonProcess) {
-            pythonProcess.kill();
+        // Wait for graceful shutdown with escalation
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            if (pythonProcess && !pythonProcess.killed) {
+              console.warn('Python process did not exit gracefully, forcing kill');
+              pythonProcess.kill('SIGKILL'); // Force kill after 5s
+            }
+            resolve();
+          }, 5000); // 5 second timeout
+
+          pythonProcess!.once('exit', () => {
+            clearTimeout(timeout);
             pythonProcess = null;
-          }
-        }, 1000);
+            resolve();
+          });
+
+          // Try SIGTERM first
+          pythonProcess!.kill('SIGTERM');
+        });
       }
 
       return { success: true };
