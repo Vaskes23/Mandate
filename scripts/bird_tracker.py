@@ -478,11 +478,6 @@ def run_ipc_mode(args):
                 }
                 print(json.dumps(output), flush=True)
 
-            elif command['action'] == 'set_selected_bird':
-                # Update selected bird ID
-                bird_id = command.get('bird_id')
-                tracker.selected_bird_id = bird_id
-
             elif command['action'] == 'stop':
                 # Stop processing (would need threading for proper implementation)
                 output = {'type': 'stopped'}

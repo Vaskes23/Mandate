@@ -33,12 +33,6 @@ export const ArtPlaceholder: React.FC = () => {
   const [currentStats, setCurrentStats] = useState({ current: 0, total: 0 });
   const [selectedBirdId, setSelectedBirdId] = useState<number | null>(null);
 
-  // Notify backend when selected bird changes
-  useEffect(() => {
-    if (isProcessing || isProcessed) {
-      (window as any).electron?.birdTracking?.setSelectedBird?.(selectedBirdId);
-    }
-  }, [selectedBirdId, isProcessing, isProcessed]);
   const animationFrameRef = useRef<number>();
 
   useEffect(() => {
