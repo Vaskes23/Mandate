@@ -16,9 +16,9 @@ interface BirdTrackingResults {
 }
 
 interface BirdTrackingAPI {
-  start: (inputPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
+  start: (inputPath: string) => Promise<{ success: boolean; error?: string }>;
   stop: () => Promise<{ success: boolean; error?: string }>;
-  onProgress: (callback: (data: BirdTrackingProgress) => void) => () => void;
+  onFrameData: (callback: (data: BirdTrackingProgress) => void) => () => void; 
   onCompleted: (callback: (results: BirdTrackingResults) => void) => () => void;
   onError: (callback: (error: string) => void) => () => void;
 }
