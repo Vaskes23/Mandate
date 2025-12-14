@@ -1,215 +1,79 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { TrackingData, VideoMetadata } from '../types/tracking.types';
+import { useTracking } from '../hooks/useTracking';
+import { useCanvasRenderer } from '../hooks/useCanvasRenderer';
+import { VideoPlayer } from './VideoPlayer';
+import { TrackingOverlay } from './TrackingOverlay';
+import { TrackingStats } from './TrackingStats';
+import { ProcessingIndicator } from './ProcessingIndicator';
+import { TrackingStats as TrackingStatsType } from '../types/tracking.types';
 
 interface ArtPlaceholderProps {
   onVideoNameChange?: (filename: string) => void;
 }
 
+/**
+ * Main container component for bird tracking visualization
+ * Orchestrates video playback, tracking, and overlay rendering
+ */
 export const ArtPlaceholder: React.FC<ArtPlaceholderProps> = ({ onVideoNameChange }) => {
+  // Refs for video and canvas elements (shared with hooks)
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isProcessed, setIsProcessed] = useState(false);
-  const [trackingDataMap, setTrackingDataMap] = useState<Map<number, TrackingData>>(new Map());
-  const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
-  const [currentStats, setCurrentStats] = useState({ current: 0, total: 0 });
+
+  // Local UI state
+  const [currentStats, setCurrentStats] = useState<TrackingStatsType>({ current: 0, total: 0 });
   const [selectedBirdId, setSelectedBirdId] = useState<number | null>(null);
-  const [videoFileName, setVideoFileName] = useState<string>('birdsExample.mp4');
+  const videoFileName = 'birdsExample.mp4';
 
-  const animationFrameRef = useRef<number>();
+  // Use tracking hook for IPC management
+  const {
+    trackingDataMap,
+    videoMetadata,
+    isProcessing,
+    isProcessed,
+    startTracking,
+    error
+  } = useTracking();
 
-  // Helper function to extract filename from path
-  const getFileName = (path: string): string => {
-    // Remove any directory path (handles both forward and back slashes)
-    const filename = path.split(/[\\/]/).pop() || path;
-    return filename;
-  };
+  // Use canvas renderer hook for animation loop
+  useCanvasRenderer({
+    canvasRef,
+    videoRef,
+    videoMetadata,
+    trackingDataMap,
+    selectedBirdId,
+    isProcessed,
+    onStatsUpdate: setCurrentStats
+  });
 
-  useEffect(() => {
-    // Setup tracking frame data listener
-    const removeFrameDataListener = (window as any).electron?.birdTracking?.onFrameData((data: TrackingData) => {
-      setTrackingDataMap(prev => {
-        const newMap = new Map(prev);
-        newMap.set(data.frame, data);
-        return newMap;
-      });
-    });
-
-    // Setup completion listener
-    const removeCompletedListener = (window as any).electron?.birdTracking?.onCompleted((results: any) => {
-      setIsProcessing(false);
-      setIsProcessed(true);
-      setVideoMetadata({
-        fps: results.fps,
-        width: results.width,
-        height: results.height
-      });
-    });
-
-    // Setup error listener
-    const removeErrorListener = (window as any).electron?.birdTracking?.onError((error: string) => {
-      console.error('Tracking error:', error);
-      setIsProcessing(false);
-    });
-
-    return () => {
-      if (removeFrameDataListener) removeFrameDataListener();
-      if (removeCompletedListener) removeCompletedListener();
-      if (removeErrorListener) removeErrorListener();
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, []);
-
-  // Notify parent of video filename changes
+  // Notify parent of video filename
   useEffect(() => {
     if (onVideoNameChange) {
-      onVideoNameChange(getFileName(videoFileName));
+      onVideoNameChange(videoFileName);
     }
   }, [videoFileName, onVideoNameChange]);
 
-  // Canvas rendering loop
-  useEffect(() => {
-    if (!isProcessed || !videoRef.current || !canvasRef.current || !videoMetadata) {
-      return;
-    }
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) return;
-
-    const renderFrame = () => {
-      if (!video.paused && !video.ended) {
-        // Calculate current frame number
-        const currentFrame = Math.floor(video.currentTime * videoMetadata.fps);
-
-        // Get tracking data for this frame
-        const trackingData = trackingDataMap.get(currentFrame);
-
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        if (trackingData) {
-          // Update stats
-          setCurrentStats({
-            current: trackingData.stats.current_birds,
-            total: trackingData.stats.total_birds
-          });
-
-          // Draw bounding boxes and IDs
-          trackingData.objects.forEach(bird => {
-            // Determine color based on selection
-            const isSelected = bird.id === selectedBirdId;
-            const color = isSelected ? '#9F00FF' : '#00FF00';
-
-            // Draw bounding box
-            ctx.strokeStyle = color;
-            ctx.lineWidth = isSelected ? 3 : 2;
-            ctx.strokeRect(bird.x, bird.y, bird.w, bird.h);
-
-            // Draw ID label with background
-            const text = `ID: ${bird.id}`;
-            ctx.font = '14px Arial';
-            const textMetrics = ctx.measureText(text);
-            const textHeight = 16;
-
-            // Background rectangle
-            ctx.fillStyle = color;
-            ctx.fillRect(bird.x, bird.y - textHeight - 4, textMetrics.width + 8, textHeight + 4);
-
-            // Text
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillText(text, bird.x + 4, bird.y - 6);
-
-            // Draw centroid
-            ctx.fillStyle = '#FF0000';
-            ctx.beginPath();
-            ctx.arc(bird.cx, bird.cy, 4, 0, 2 * Math.PI);
-            ctx.fill();
-          });
-        }
-      }
-
-      animationFrameRef.current = requestAnimationFrame(renderFrame);
-    };
-
-    renderFrame();
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isProcessed, trackingDataMap, videoMetadata, selectedBirdId]);
-
-  const handleVideoClick = async () => {
-    if (videoRef.current) {
-      // If already processed, just play/pause
-      if (isProcessed) {
-        if (videoRef.current.paused) {
-          videoRef.current.play();
-        } else {
-          videoRef.current.pause();
-        }
-        return;
-      }
-
-      // If currently processing, toggle play/pause but don't restart
-      if (isProcessing) {
-        if (videoRef.current.paused) {
-          videoRef.current.play();
-        } else {
-          videoRef.current.pause();
-        }
-        return;
-      }
-
-      // First click: start tracking
-      setIsProcessing(true);
-      videoRef.current.play();
-
-      try {
-        await (window as any).electron.birdTracking.start('birdsExample.mp4');
-      } catch (error) {
-        console.error('Failed to start tracking:', error);
-        setIsProcessing(false);
-      }
+  // Handle video metadata loaded (sync canvas size)
+  const handleMetadataLoaded = (video: HTMLVideoElement) => {
+    if (canvasRef.current) {
+      canvasRef.current.width = video.videoWidth;
+      canvasRef.current.height = video.videoHeight;
     }
   };
 
-  const handleLoadedMetadata = () => {
-    // Set canvas dimensions to match video
-    if (videoRef.current && canvasRef.current) {
-      canvasRef.current.width = videoRef.current.videoWidth;
-      canvasRef.current.height = videoRef.current.videoHeight;
-    }
+  // Handle start tracking
+  const handleStartTracking = async () => {
+    await startTracking(videoFileName);
   };
 
   return (
     <div className="art-container">
       <div className="art-metadata-row">
-        <div className="art-metadata-left">
-        Select ID: <input
-              type="number"
-              value={selectedBirdId ?? ''}
-              onChange={(e) => setSelectedBirdId(e.target.value ? Number(e.target.value) : null)}
-              placeholder="ID"
-              style={{
-                width: '60px',
-                marginLeft: '8px',
-                padding: '4px 8px',
-                fontSize: '14px',
-                borderRadius: '4px',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                color: '#ffffff',
-                outline: 'none'
-              }}
-            />
-        </div>
+        <TrackingStats
+          stats={currentStats}
+          selectedBirdId={selectedBirdId}
+          onSelectBird={setSelectedBirdId}
+        />
         <div className="art-metadata-center">
           <h2 className="art-title">Berlin Karl-Marx-Allee</h2>
         </div>
@@ -219,32 +83,31 @@ export const ArtPlaceholder: React.FC<ArtPlaceholderProps> = ({ onVideoNameChang
       </div>
 
       <div className="art-placeholder">
-        <video
+        <VideoPlayer
           ref={videoRef}
-          className="art-video"
-          loop
-          muted
-          playsInline
-          onClick={handleVideoClick}
-          onLoadedMetadata={handleLoadedMetadata}
-        >
-          <source src="../../birdsExample.mp4" type="video/mp4" />
-        </video>
-
-        <canvas
-          ref={canvasRef}
-          className="tracking-canvas"
+          videoSrc="../../birdsExample.mp4"
+          isProcessing={isProcessing}
+          isProcessed={isProcessed}
+          onStartTracking={handleStartTracking}
+          onMetadataLoaded={handleMetadataLoaded}
         />
 
-        {isProcessing && !isProcessed && (
-          <div className="processing-overlay">
-            Processing...
-          </div>
-        )}
+        <TrackingOverlay ref={canvasRef} />
+
+        <ProcessingIndicator
+          isProcessing={isProcessing}
+          isProcessed={isProcessed}
+        />
 
         {isProcessed && (
           <div className="stats-overlay">
             Current Birds: {currentStats.current} | Total: {currentStats.total} |
+          </div>
+        )}
+
+        {error && (
+          <div className="error-overlay">
+            Error: {error}
           </div>
         )}
       </div>
