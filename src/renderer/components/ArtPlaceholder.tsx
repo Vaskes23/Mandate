@@ -23,7 +23,11 @@ interface VideoMetadata {
   height: number;
 }
 
-export const ArtPlaceholder: React.FC = () => {
+interface ArtPlaceholderProps {
+  onVideoNameChange?: (filename: string) => void;
+}
+
+export const ArtPlaceholder: React.FC<ArtPlaceholderProps> = ({ onVideoNameChange }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -32,8 +36,16 @@ export const ArtPlaceholder: React.FC = () => {
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [currentStats, setCurrentStats] = useState({ current: 0, total: 0 });
   const [selectedBirdId, setSelectedBirdId] = useState<number | null>(null);
+  const [videoFileName, setVideoFileName] = useState<string>('birdsExample.mp4');
 
   const animationFrameRef = useRef<number>();
+
+  // Helper function to extract filename from path
+  const getFileName = (path: string): string => {
+    // Remove any directory path (handles both forward and back slashes)
+    const filename = path.split(/[\\/]/).pop() || path;
+    return filename;
+  };
 
   useEffect(() => {
     // Setup tracking frame data listener
@@ -71,6 +83,13 @@ export const ArtPlaceholder: React.FC = () => {
       }
     };
   }, []);
+
+  // Notify parent of video filename changes
+  useEffect(() => {
+    if (onVideoNameChange) {
+      onVideoNameChange(getFileName(videoFileName));
+    }
+  }, [videoFileName, onVideoNameChange]);
 
   // Canvas rendering loop
   useEffect(() => {
