@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
-import { getPythonPath, getScriptPath, ipcChannels, windowConfig } from './config/app.config';
+import { getPythonPath, getScriptPath, ipcChannels, windowConfig, pythonConfig } from './config/app.config';
 
 let mainWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
@@ -120,10 +120,10 @@ function setupBirdTrackingHandlers() {
           const timeout = setTimeout(() => {
             if (pythonProcess && !pythonProcess.killed) {
               console.warn('Python process did not exit gracefully, forcing kill');
-              pythonProcess.kill('SIGKILL'); // Force kill after 5s
+              pythonProcess.kill('SIGKILL');
             }
             resolve();
-          }, 5000); // 5 second timeout
+          }, pythonConfig.shutdownTimeoutMs);
 
           pythonProcess!.once('exit', () => {
             clearTimeout(timeout);
