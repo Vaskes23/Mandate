@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
-import { getPythonPath, getScriptPath } from './config/app.config';
+import { getPythonPath, getScriptPath, ipcChannels } from './config/app.config';
 
 let mainWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
@@ -38,7 +38,7 @@ function createWindow() {
 // Bird tracking IPC handlers
 function setupBirdTrackingHandlers() {
   // Start bird tracking
-  ipcMain.handle('bird-tracking:start', async (_event, inputPath: string) => {
+  ipcMain.handle(ipcChannels.birdTracking.start, async (_event, inputPath: string) => {
     try {
       // Stop any existing process
       if (pythonProcess) {
@@ -75,11 +75,11 @@ function setupBirdTrackingHandlers() {
             const message = JSON.parse(line);
 
             if (message.type === 'frame_data') {
-              mainWindow?.webContents.send('bird-tracking:frame-data', message.data);
+              mainWindow?.webContents.send(ipcChannels.birdTracking.frameData, message.data);
             } else if (message.type === 'completed') {
-              mainWindow?.webContents.send('bird-tracking:completed', message.results);
+              mainWindow?.webContents.send(ipcChannels.birdTracking.completed, message.results);
             } else if (message.type === 'error') {
-              mainWindow?.webContents.send('bird-tracking:error', message.message);
+              mainWindow?.webContents.send(ipcChannels.birdTracking.error, message.message);
             }
           } catch (e) {
             console.error('Failed to parse Python output:', line, e);
@@ -91,7 +91,7 @@ function setupBirdTrackingHandlers() {
       pythonProcess.stderr?.on('data', (data) => {
         const error = data.toString();
         console.error('Python error:', error);
-        mainWindow?.webContents.send('bird-tracking:error', error);
+        mainWindow?.webContents.send(ipcChannels.birdTracking.error, error);
       });
 
       // Handle process exit
@@ -108,7 +108,7 @@ function setupBirdTrackingHandlers() {
   });
 
   // Stop bird tracking
-  ipcMain.handle('bird-tracking:stop', async () => {
+  ipcMain.handle(ipcChannels.birdTracking.stop, async () => {
     try {
       if (pythonProcess) {
         // Send stop command via stdin first
