@@ -1,27 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-
-interface TrackingData {
-  frame: number;
-  objects: Array<{
-    id: number;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    cx: number;
-    cy: number;
-  }>;
-  stats: {
-    current_birds: number;
-    total_birds: number;
-  };
-}
-
-interface VideoMetadata {
-  fps: number;
-  width: number;
-  height: number;
-}
+import { TrackingData, VideoMetadata } from '../types/tracking.types';
 
 interface ArtPlaceholderProps {
   onVideoNameChange?: (filename: string) => void;
