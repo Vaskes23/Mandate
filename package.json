@@ -1,7 +1,7 @@
 {
   "name": "compvision",
   "version": "1.0.0",
-  "description": "A visual artist portfolio app with matte design",
+  "description": "Desktop application for tracking flying objects (birds, drones, etc.) in video footage using computer vision",
   "main": "dist/main.js",
   "scripts": {
     "dev": "concurrently \"npm run watch:main\" \"npm run watch:renderer\" \"wait-on dist/main.js dist/renderer/index.html && electron .\"",
@@ -25,7 +25,11 @@
   "keywords": [
     "electron",
     "typescript",
-    "portfolio"
+    "computer-vision",
+    "bird-tracking",
+    "opencv",
+    "object-tracking",
+    "python"
   ],
   "author": "",
   "license": "MIT",
@@ -60,7 +64,7 @@
     "appId": "com.compvision.app",
     "productName": "CompVision",
     "mac": {
-      "category": "public.app-category.graphics-design",
+      "category": "public.app-category.research",
       "target": [
         "dmg",
         "zip"
