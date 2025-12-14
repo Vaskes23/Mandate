@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
-import { getPythonPath, getScriptPath, ipcChannels } from './config/app.config';
+import { getPythonPath, getScriptPath, ipcChannels, windowConfig } from './config/app.config';
 
 let mainWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
@@ -11,16 +11,16 @@ const isDevelopment = !app.isPackaged;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1600,
-    height: 900,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 10, y: 10 },
+    width: windowConfig.width,
+    height: windowConfig.height,
+    titleBarStyle: windowConfig.titleBarStyle,
+    trafficLightPosition: windowConfig.trafficLightPosition,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true
+      nodeIntegration: windowConfig.webPreferences.nodeIntegration,
+      contextIsolation: windowConfig.webPreferences.contextIsolation
     },
-    backgroundColor: '#FFFFFF',
+    backgroundColor: windowConfig.backgroundColor,
     show: false
   });
 
