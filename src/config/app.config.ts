@@ -15,6 +15,42 @@ export const pythonConfig = {
 };
 
 /**
+ * Window configuration for Electron BrowserWindow
+ */
+export const windowConfig = {
+  width: 1600,
+  height: 900,
+  titleBarStyle: 'hiddenInset' as const,
+  trafficLightPosition: { x: 10, y: 10 },
+  backgroundColor: '#FFFFFF',
+  webPreferences: {
+    nodeIntegration: false,
+    contextIsolation: true,
+  },
+};
+
+/**
+ * IPC channel names (single source of truth)
+ */
+export const ipcChannels = {
+  birdTracking: {
+    start: 'bird-tracking:start',
+    stop: 'bird-tracking:stop',
+    frameData: 'bird-tracking:frame-data',
+    completed: 'bird-tracking:completed',
+    error: 'bird-tracking:error',
+  },
+} as const;
+
+/**
+ * Application metadata
+ */
+export const appMetadata = {
+  name: 'CompVision Bird Tracker',
+  version: '1.0.0',
+};
+
+/**
  * Get the platform-specific Python interpreter path
  * @param isDev - Whether running in development mode
  * @returns Absolute path to Python interpreter
