@@ -72,6 +72,103 @@ class BirdTrackingSystem:
         with open(config_full_path, 'r') as f:
             return json.load(f)
 
+    def _process_frames(self, input_path: str):
+        """
+        Generator that yields processed frame data for each video frame.
+        Consolidates the shared detection/tracking logic used by both
+        process_video_stream() and process_video().
+
+        Args:
+            input_path: Path to input video file
+
+        Yields:
+            Tuple of (frame_num, frame, bounding_boxes, objects, detection_indices, stats, video_props)
+            where video_props is a dict with fps, width, height, total_frames
+        """
+        # Open video
+        cap = cv2.VideoCapture(input_path)
+
+        if not cap.isOpened():
+            raise IOError(f"Cannot open video file: {input_path}")
+
+        # Get video properties (yielded with first frame for consumers that need it)
+        video_props = {
+            'fps': int(cap.get(cv2.CAP_PROP_FPS)),
+            'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            'total_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        }
+
+        frame_num = 0
+
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frame_num += 1
+
+                # Detect birds in current frame
+                bounding_boxes, mask = self.detector.detect(frame)
+
+                # Get centroids from bounding boxes
+                centroids = self.detector.get_centroids(bounding_boxes)
+
+                # Update tracker
+                objects, detection_indices = self.tracker.update(centroids)
+
+                # Get current statistics
+                stats = self.tracker.get_statistics()
+
+                yield frame_num, frame, bounding_boxes, objects, detection_indices, stats, video_props
+        finally:
+            cap.release()
+
+    def _build_tracking_data(self, frame_num: int, objects: Dict, detection_indices: Dict,
+                             bounding_boxes: List, stats: Dict) -> Dict:
+        """
+        Build tracking data dictionary for a single frame (used by IPC streaming).
+
+        Args:
+            frame_num: Current frame number
+            objects: Dictionary of tracked objects {id: centroid}
+            detection_indices: Dictionary mapping {object_id: detection_index}
+            bounding_boxes: List of bounding boxes from detector
+            stats: Tracker statistics dictionary
+
+        Returns:
+            Dictionary with frame tracking data for IPC transmission
+        """
+        tracking_data = {
+            'frame': frame_num,
+            'objects': [],
+            'stats': {
+                'current_birds': stats['current_birds'],
+                'total_birds': stats['total_birds_seen']
+            }
+        }
+
+        # Add bird objects with bounding boxes using detection indices
+        for object_id, centroid in objects.items():
+            cx, cy = int(centroid[0]), int(centroid[1])
+
+            # Find corresponding bounding box using detection index
+            detection_idx = detection_indices.get(object_id)
+            if detection_idx is not None and detection_idx < len(bounding_boxes):
+                x, y, w, h = bounding_boxes[detection_idx]
+                tracking_data['objects'].append({
+                    'id': object_id,
+                    'x': x,
+                    'y': y,
+                    'w': w,
+                    'h': h,
+                    'cx': cx,
+                    'cy': cy
+                })
+
+        return tracking_data
+
     def process_video_stream(self, input_path: str, frame_callback=None) -> Dict:
         """
         Process video frame-by-frame and stream tracking data (for Electron integration).
@@ -83,98 +180,45 @@ class BirdTrackingSystem:
         Returns:
             Dictionary with processing statistics
         """
-        # Open video
-        cap = cv2.VideoCapture(input_path)
-
-        if not cap.isOpened():
-            raise IOError(f"Cannot open video file: {input_path}")
-
-        # Get video properties
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        # Processing loop
-        frame_num = 0
+        # Initialize stats (will be populated from generator)
         processing_stats = {
-            'total_frames': total_frames,
+            'total_frames': 0,
             'processed_frames': 0,
             'max_simultaneous_birds': 0,
             'total_unique_birds': 0,
-            'fps': fps,
-            'width': width,
-            'height': height
+            'fps': 0,
+            'width': 0,
+            'height': 0
         }
 
-        try:
-            while True:
-                ret, frame = cap.read()
+        # Process each frame using the shared generator
+        for frame_num, frame, boxes, objects, det_idx, stats, video_props in self._process_frames(input_path):
+            # Update video properties on first frame
+            if frame_num == 1:
+                processing_stats['fps'] = video_props['fps']
+                processing_stats['width'] = video_props['width']
+                processing_stats['height'] = video_props['height']
+                processing_stats['total_frames'] = video_props['total_frames']
 
-                if not ret:
-                    break
+            # Update running statistics
+            processing_stats['processed_frames'] = frame_num
+            processing_stats['max_simultaneous_birds'] = max(
+                processing_stats['max_simultaneous_birds'],
+                stats['current_birds']
+            )
+            processing_stats['total_unique_birds'] = stats['total_birds_seen']
 
-                frame_num += 1
-
-                # Detect birds in current frame
-                bounding_boxes, mask = self.detector.detect(frame)
-
-                # Get centroids from bounding boxes
-                centroids = self.detector.get_centroids(bounding_boxes)
-
-                # Update tracker
-                objects, detection_indices = self.tracker.update(centroids)
-
-                # Update statistics
-                stats = self.tracker.get_statistics()
-                processing_stats['processed_frames'] = frame_num
-                processing_stats['max_simultaneous_birds'] = max(
-                    processing_stats['max_simultaneous_birds'],
-                    stats['current_birds']
-                )
-                processing_stats['total_unique_birds'] = stats['total_birds_seen']
-
-                # Prepare tracking data for this frame
-                tracking_data = {
-                    'frame': frame_num,
-                    'objects': [],
-                    'stats': {
-                        'current_birds': stats['current_birds'],
-                        'total_birds': stats['total_birds_seen']
-                    }
-                }
-
-                # Add bird objects with bounding boxes using detection indices
-                for object_id, centroid in objects.items():
-                    cx, cy = int(centroid[0]), int(centroid[1])
-
-                    # Find corresponding bounding box using detection index
-                    detection_idx = detection_indices.get(object_id)
-                    if detection_idx is not None and detection_idx < len(bounding_boxes):
-                        x, y, w, h = bounding_boxes[detection_idx]
-                        tracking_data['objects'].append({
-                            'id': object_id,
-                            'x': x,
-                            'y': y,
-                            'w': w,
-                            'h': h,
-                            'cx': cx,
-                            'cy': cy
-                        })
-
-                # Send frame data via callback
-                if frame_callback:
-                    frame_callback(frame_num, tracking_data)
-
-        finally:
-            cap.release()
+            # Build and send tracking data via callback
+            if frame_callback:
+                tracking_data = self._build_tracking_data(frame_num, objects, det_idx, boxes, stats)
+                frame_callback(frame_num, tracking_data)
 
         return processing_stats
 
     def process_video(self, input_path: str, output_path: Optional[str] = None,
                       progress_callback=None) -> Dict:
         """
-        Process entire video with bird detection and tracking.
+        Process entire video with bird detection and tracking (CLI mode with visualization).
 
         Args:
             input_path: Path to input video file
@@ -184,56 +228,34 @@ class BirdTrackingSystem:
         Returns:
             Dictionary with processing statistics
         """
-        # Open video
-        cap = cv2.VideoCapture(input_path)
-
-        if not cap.isOpened():
-            raise IOError(f"Cannot open video file: {input_path}")
-
-        # Get video properties
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        # Initialize video writer if saving output
-        writer = None
-        if output_path and self.output_config['save_video']:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
-        # Processing loop
-        frame_num = 0
+        # Initialize stats and video writer (set up on first frame)
         processing_stats = {
-            'total_frames': total_frames,
+            'total_frames': 0,
             'processed_frames': 0,
             'max_simultaneous_birds': 0,
             'total_unique_birds': 0
         }
+        writer = None
+        user_quit = False
 
         try:
-            while True:
-                ret, frame = cap.read()
+            # Process each frame using the shared generator
+            for frame_num, frame, boxes, objects, det_idx, stats, video_props in self._process_frames(input_path):
+                # Initialize video writer on first frame (need video props)
+                if frame_num == 1:
+                    processing_stats['total_frames'] = video_props['total_frames']
+                    if output_path and self.output_config['save_video']:
+                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                        writer = cv2.VideoWriter(
+                            output_path, fourcc,
+                            video_props['fps'],
+                            (video_props['width'], video_props['height'])
+                        )
 
-                if not ret:
-                    break
+                # Visualize the frame with bounding boxes and stats
+                annotated_frame = self._visualize(frame, objects, boxes, det_idx)
 
-                frame_num += 1
-
-                # Detect birds in current frame
-                bounding_boxes, mask = self.detector.detect(frame)
-
-                # Get centroids from bounding boxes
-                centroids = self.detector.get_centroids(bounding_boxes)
-
-                # Update tracker
-                objects, detection_indices = self.tracker.update(centroids)
-
-                # Visualize
-                annotated_frame = self._visualize(frame, objects, bounding_boxes, detection_indices)
-
-                # Update statistics
-                stats = self.tracker.get_statistics()
+                # Update running statistics
                 processing_stats['processed_frames'] = frame_num
                 processing_stats['max_simultaneous_birds'] = max(
                     processing_stats['max_simultaneous_birds'],
@@ -247,6 +269,7 @@ class BirdTrackingSystem:
 
                     # Check for 'q' key to quit
                     if cv2.waitKey(1) & 0xFF == ord('q'):
+                        user_quit = True
                         break
 
                 # Write frame if saving
@@ -258,8 +281,7 @@ class BirdTrackingSystem:
                     progress_callback(frame_num, stats)
 
         finally:
-            # Cleanup
-            cap.release()
+            # Cleanup resources
             if writer is not None:
                 writer.release()
             if self.output_config['show_display']:
