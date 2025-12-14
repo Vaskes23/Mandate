@@ -78,6 +78,11 @@ class BirdTrackingSystem:
         Consolidates the shared detection/tracking logic used by both
         process_video_stream() and process_video().
 
+        Supports performance optimizations:
+        - frame_downscale: Scale factor for detection (1.0 = full resolution)
+        - skip_frames: Process every N frames (0 = process all)
+        - use_roi: Only process a region of interest
+
         Args:
             input_path: Path to input video file
 
@@ -99,6 +104,13 @@ class BirdTrackingSystem:
             'total_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         }
 
+        # Performance settings
+        perf_config = self.config.get('performance', {})
+        downscale = perf_config.get('frame_downscale', 1.0)
+        skip_frames = perf_config.get('skip_frames', 0)
+        use_roi = perf_config.get('use_roi', False)
+        roi = perf_config.get('roi', {})
+
         frame_num = 0
 
         try:
@@ -109,8 +121,47 @@ class BirdTrackingSystem:
 
                 frame_num += 1
 
-                # Detect birds in current frame
-                bounding_boxes, mask = self.detector.detect(frame)
+                # Skip frames for performance (process every N+1 frames)
+                if skip_frames > 0 and (frame_num - 1) % (skip_frames + 1) != 0:
+                    continue
+
+                # Apply ROI cropping if enabled
+                detection_frame = frame
+                roi_offset_x, roi_offset_y = 0, 0
+                if use_roi and roi:
+                    rx, ry = roi.get('x', 0), roi.get('y', 0)
+                    rw, rh = roi.get('width', 0), roi.get('height', 0)
+                    if rw > 0 and rh > 0:
+                        detection_frame = frame[ry:ry+rh, rx:rx+rw]
+                        roi_offset_x, roi_offset_y = rx, ry
+
+                # Apply frame downscaling for faster detection
+                if downscale < 1.0 and downscale > 0:
+                    small_frame = cv2.resize(
+                        detection_frame,
+                        None,
+                        fx=downscale,
+                        fy=downscale,
+                        interpolation=cv2.INTER_AREA
+                    )
+                    bounding_boxes, mask = self.detector.detect(small_frame)
+                    # Scale bounding boxes back to original size
+                    scale_factor = 1.0 / downscale
+                    bounding_boxes = [
+                        (int(x * scale_factor + roi_offset_x),
+                         int(y * scale_factor + roi_offset_y),
+                         int(w * scale_factor),
+                         int(h * scale_factor))
+                        for (x, y, w, h) in bounding_boxes
+                    ]
+                else:
+                    bounding_boxes, mask = self.detector.detect(detection_frame)
+                    # Adjust for ROI offset
+                    if roi_offset_x > 0 or roi_offset_y > 0:
+                        bounding_boxes = [
+                            (x + roi_offset_x, y + roi_offset_y, w, h)
+                            for (x, y, w, h) in bounding_boxes
+                        ]
 
                 # Get centroids from bounding boxes
                 centroids = self.detector.get_centroids(bounding_boxes)

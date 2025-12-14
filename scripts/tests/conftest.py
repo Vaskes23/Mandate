@@ -27,6 +27,12 @@ def sample_config():
             'morph_kernel_size': 3,
             'morph_iterations': 2
         },
+        'performance': {
+            'frame_downscale': 1.0,
+            'skip_frames': 0,
+            'use_roi': False,
+            'roi': {'x': 0, 'y': 0, 'width': 0, 'height': 0}
+        },
         'tracking': {
             'max_disappeared': 40,
             'max_distance': 120

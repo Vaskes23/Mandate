@@ -4,11 +4,13 @@
   "description": "Desktop application for tracking flying objects (birds, drones, etc.) in video footage using computer vision",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "concurrently \"npm run watch:main\" \"npm run watch:renderer\" \"wait-on dist/main.js dist/renderer/index.html && electron .\"",
+    "dev": "concurrently \"npm run watch:main\" \"npm run dev:renderer\" \"wait-on dist/main.js dist/renderer/index.html && npm run dev:electron\"",
+    "dev:renderer": "webpack serve --config webpack.renderer.config.js",
+    "dev:electron": "ELECTRON_DEV=true electron .",
     "watch:main": "tsc -p tsconfig.main.json --watch",
     "watch:renderer": "webpack --config webpack.renderer.config.js --watch",
     "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "webpack --config webpack.renderer.config.js --mode production",
+    "build:renderer": "NODE_ENV=production webpack --config webpack.renderer.config.js",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
     "package": "npm run build && electron-builder",
@@ -43,6 +45,7 @@
     "css-loader": "^6.8.1",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
+    "electron-reload": "^2.0.0-alpha.1",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
@@ -54,7 +57,8 @@
     "typescript": "^5.3.2",
     "wait-on": "^7.2.0",
     "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4"
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.0.0"
   },
   "dependencies": {
     "react": "^18.2.0",

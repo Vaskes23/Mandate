@@ -9,6 +9,20 @@ let pythonProcess: ChildProcess | null = null;
 // Determine if running in development or production
 const isDevelopment = !app.isPackaged;
 
+// Enable hot reload for development (auto-restart when main process files change)
+if (isDevelopment && process.env.ELECTRON_DEV) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('electron-reload')(__dirname, {
+      electron: path.join(__dirname, '..', 'node_modules', '.bin', 'electron'),
+      hardResetMethod: 'exit',
+      forceHardReset: true
+    });
+  } catch (e) {
+    console.log('electron-reload not available:', e);
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: windowConfig.width,
