@@ -60,6 +60,11 @@ class BirdDetector:
         self.morph_kernel = config['detection']['morph_kernel_size']
         self.morph_iterations = config['detection']['morph_iterations']
 
+        # Initialize Frame Differencing state
+        # Motion threshold: SMALLER = detects slow movement. LARGER = only fast movement
+        self.prev_frame = None
+        self.motion_diff_threshold = config['detection'].get('motion_diff_threshold', 15)
+
         # Spatial filter configuration
         self.spatial_filter_enabled = config.get('spatial_filter', {}).get('enabled', False)
         horizon_percent = config.get('spatial_filter', {}).get('horizon_line_percent', 0.70)
@@ -88,18 +93,64 @@ class BirdDetector:
             (self.morph_kernel, self.morph_kernel)
         )
 
+        # CLAHE (Contrast Limited Adaptive Histogram Equalization) configuration
+        # Enhances local contrast to make small dark birds more visible against blue sky
+        self.clahe_enabled = config['detection'].get('clahe_enabled', True)
+        self.clahe_clip_limit = config['detection'].get('clahe_clip_limit', 2.0)
+        self.clahe_tile_size = config['detection'].get('clahe_tile_size', 8)
+
+        # Pre-create CLAHE object for performance (avoid recreating each frame)
+        if self.clahe_enabled:
+            self.clahe = cv2.createCLAHE(
+                clipLimit=self.clahe_clip_limit,
+                tileGridSize=(self.clahe_tile_size, self.clahe_tile_size)
+            )
+
+        # Persistence-based static detection configuration
+        # Automatically learns and masks persistent foreground pixels (lamp posts, antennas)
+        self.static_detection_enabled = config.get('static_detection', {}).get('enabled', False)
+        self.calibration_frames = config.get('static_detection', {}).get('calibration_frames', 100)
+        self.persistence_threshold = config.get('static_detection', {}).get('persistence_threshold', 0.5)
+        self.learning_rate = config.get('static_detection', {}).get('learning_rate', 0.05)
+
+        # Persistence map state (lazy initialized on first frame)
+        self.persistence_map: Optional[np.ndarray] = None  # Float32 accumulator [0.0, 1.0]
+        self.static_mask: Optional[np.ndarray] = None      # Binary mask of static regions
+        self.frame_count: int = 0                          # Frames processed for calibration
+        self.calibration_complete: bool = False            # Flag when calibration is done
+
     def preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
         """
-        Preprocess frame with Gaussian blur for noise reduction.
+        Preprocess frame with CLAHE contrast enhancement and Gaussian blur.
+        CLAHE enhances local contrast to make small dark birds more visible against blue sky.
 
         Args:
             frame: Input frame (BGR)
 
         Returns:
-            Blurred frame
+            Preprocessed frame with enhanced contrast and reduced noise
         """
-        # Apply Gaussian blur to reduce sensor noise
-        blurred = cv2.GaussianBlur(frame, (self.blur_kernel, self.blur_kernel), 0)
+        # Step 1: Apply CLAHE to enhance local contrast for small object detection
+        if self.clahe_enabled:
+            # Convert to LAB color space for perceptually uniform contrast enhancement
+            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+
+            # Split LAB channels - L is luminance (brightness)
+            l_channel, a_channel, b_channel = cv2.split(lab)
+
+            # Apply CLAHE to luminance channel only (preserves color)
+            l_enhanced = self.clahe.apply(l_channel)
+
+            # Merge enhanced L channel back with original A and B channels
+            lab_enhanced = cv2.merge([l_enhanced, a_channel, b_channel])
+
+            # Convert back to BGR color space
+            enhanced = cv2.cvtColor(lab_enhanced, cv2.COLOR_LAB2BGR)
+        else:
+            enhanced = frame
+
+        # Step 2: Apply Gaussian blur to reduce sensor noise
+        blurred = cv2.GaussianBlur(enhanced, (self.blur_kernel, self.blur_kernel), 0)
         return blurred
 
     def apply_morphology(self, mask: np.ndarray) -> np.ndarray:
@@ -161,6 +212,83 @@ class BirdDetector:
 
         return masked
 
+    def _initialize_persistence_map(self, frame_shape: tuple) -> None:
+        """
+        Lazy initialize persistence map on first frame.
+        Creates a float32 array matching frame height x width for accumulation.
+
+        Args:
+            frame_shape: Shape tuple (height, width) or (height, width, channels)
+        """
+        height, width = frame_shape[:2]
+        self.persistence_map = np.zeros((height, width), dtype=np.float32)
+        self.static_mask = np.ones((height, width), dtype=np.uint8) * 255  # Start with all pixels valid
+
+    def update_persistence_map(self, fg_mask: np.ndarray) -> None:
+        """
+        Update persistence map with exponential moving average of foreground pixels.
+        Pixels that are frequently foreground accumulate higher values.
+
+        Args:
+            fg_mask: Binary foreground mask from MOG2 (0 or 255)
+        """
+        if self.persistence_map is None:
+            self._initialize_persistence_map(fg_mask.shape)
+
+        # Normalize mask to [0, 1] for EMA calculation
+        normalized_mask = (fg_mask > 0).astype(np.float32)
+
+        # Exponential moving average: new_val = (1-a)*old_val + a*new_observation
+        # Foreground pixels accumulate towards 1.0, background decays towards 0.0
+        self.persistence_map = (1 - self.learning_rate) * self.persistence_map + self.learning_rate * normalized_mask
+
+        # Increment frame count for calibration tracking
+        self.frame_count += 1
+
+    def compute_static_mask(self) -> None:
+        """
+        Compute binary static mask from persistence map.
+        Pixels with persistence above threshold are considered static obstacles.
+        Called once after calibration period completes.
+        """
+        if self.persistence_map is None:
+            return
+
+        # Pixels with high persistence (> threshold) are static, mask them OUT (set to 0)
+        # Pixels with low persistence (< threshold) are valid detection areas (255)
+        self.static_mask = np.where(
+            self.persistence_map > self.persistence_threshold,
+            0,    # Static pixel - mask out
+            255   # Valid pixel - keep detections
+        ).astype(np.uint8)
+
+    def apply_static_mask(self, mask: np.ndarray) -> np.ndarray:
+        """
+        Apply learned static mask to foreground mask.
+        Removes detections in areas identified as persistent static objects.
+
+        Args:
+            mask: Binary foreground mask
+
+        Returns:
+            Masked foreground with static regions removed
+        """
+        if not self.static_detection_enabled or self.static_mask is None:
+            return mask
+
+        # Bitwise AND: only keep pixels that are BOTH foreground AND not-static
+        return cv2.bitwise_and(mask, self.static_mask)
+
+    def reset_static_detection(self) -> None:
+        """
+        Reset static detection for recalibration.
+        Call this if camera moves or lighting changes significantly.
+        """
+        self.persistence_map = None
+        self.static_mask = None
+        self.frame_count = 0
+        self.calibration_complete = False
+
     def find_contours(self, mask: np.ndarray) -> List[np.ndarray]:
         """
         Find contours in the binary mask.
@@ -221,13 +349,49 @@ class BirdDetector:
         # Get frame dimensions
         frame_height = frame.shape[0]
 
-        # Step 1: Preprocess (blur)
+        # Step 1: Preprocess (blur + CLAHE)
         preprocessed = self.preprocess_frame(frame)
+
+        # Step 1.5: Frame Differencing (Motion Detection)
+        # Calculate absolute difference between current and previous frame
+        gray = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2GRAY)
+        motion_mask = None
+
+        if self.prev_frame is None:
+            self.prev_frame = gray
+            # First frame has no motion history, so we rely on MOG2 (which also needs learning)
+            # or we could default to all-motion or no-motion.
+            # Letting MOG2 handle it (it will likely find nothing or everything) is safest.
+        else:
+            diff = cv2.absdiff(self.prev_frame, gray)
+            _, motion_mask = cv2.threshold(diff, self.motion_diff_threshold, 255, cv2.THRESH_BINARY)
+            self.prev_frame = gray
 
         # Step 2: Background subtraction
         fg_mask = self.bg_subtractor.apply(preprocessed)
 
-        # Step 2.5: Apply exclusion zones (mask out static obstacles like lamp posts)
+        # Step 2.1: Combine MOG2 with Frame Differencing
+        # Logical AND: A pixel must be BOTH considered foreground by MOG2 AND moving
+        if motion_mask is not None:
+            fg_mask = cv2.bitwise_and(fg_mask, motion_mask)
+
+        # Step 2.2: Persistence-based static detection
+        # During calibration: accumulate foreground pixels to learn static objects
+        # After calibration: mask out persistent static regions (lamp posts, antennas)
+        if self.static_detection_enabled:
+            # Always update persistence map (rolling average even after calibration)
+            self.update_persistence_map(fg_mask)
+
+            # Check if calibration period is complete
+            if not self.calibration_complete and self.frame_count >= self.calibration_frames:
+                self.compute_static_mask()
+                self.calibration_complete = True
+
+            # Apply static mask after calibration is complete
+            if self.calibration_complete:
+                fg_mask = self.apply_static_mask(fg_mask)
+
+        # Step 2.5: Apply exclusion zones (manual fallback for static obstacles)
         fg_mask = self.apply_exclusion_mask(fg_mask)
 
         # Step 3: Morphological operations

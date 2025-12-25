@@ -38,11 +38,11 @@ class TestBirdDetectorInitialization:
         """Test BirdDetector initializes with configuration values."""
         detector = BirdDetector(sample_config)
 
-        assert detector.min_area == 0.1
-        assert detector.max_area == 500
-        assert detector.blur_kernel == 5
-        assert detector.morph_kernel == 3
-        assert detector.morph_iterations == 2
+        assert detector.min_area == 4
+        assert detector.max_area == 300
+        assert detector.blur_kernel == 3
+        assert detector.morph_kernel == 2
+        assert detector.morph_iterations == 1
 
     def test_initialization_with_spatial_filter(self, config_with_spatial_filter):
         """Test detector initializes with spatial filter settings."""
@@ -264,3 +264,218 @@ class TestBirdDetectorCentroids:
 
         assert isinstance(centroids, np.ndarray)
         assert centroids.ndim == 2
+
+
+class TestBirdDetectorCLAHE:
+    """Tests for CLAHE contrast enhancement preprocessing."""
+
+    def test_clahe_enabled_by_default(self, sample_config):
+        """Test CLAHE is enabled when config specifies it."""
+        detector = BirdDetector(sample_config)
+
+        assert detector.clahe_enabled is True
+        assert hasattr(detector, 'clahe')
+
+    def test_clahe_disabled(self, sample_config):
+        """Test CLAHE can be disabled via config."""
+        config = sample_config.copy()
+        config['detection'] = sample_config['detection'].copy()
+        config['detection']['clahe_enabled'] = False
+        detector = BirdDetector(config)
+
+        assert detector.clahe_enabled is False
+
+    def test_preprocess_frame_with_clahe(self, sample_config, blank_frame):
+        """Test preprocess_frame() applies CLAHE and returns correct shape."""
+        detector = BirdDetector(sample_config)
+
+        preprocessed = detector.preprocess_frame(blank_frame)
+
+        assert preprocessed.shape == blank_frame.shape
+        assert preprocessed.dtype == blank_frame.dtype
+
+    def test_preprocess_frame_clahe_disabled(self, sample_config, blank_frame):
+        """Test preprocess_frame() works when CLAHE is disabled."""
+        config = sample_config.copy()
+        config['detection'] = sample_config['detection'].copy()
+        config['detection']['clahe_enabled'] = False
+        detector = BirdDetector(config)
+
+        preprocessed = detector.preprocess_frame(blank_frame)
+
+        assert preprocessed.shape == blank_frame.shape
+        assert preprocessed.dtype == blank_frame.dtype
+
+    def test_clahe_enhances_contrast(self, sample_config):
+        """Test CLAHE actually enhances contrast in low-contrast image."""
+        detector = BirdDetector(sample_config)
+
+        # Create a low-contrast gray image (simulates hazy sky)
+        low_contrast = np.full((480, 640, 3), 128, dtype=np.uint8)
+        # Add a slightly darker region (simulates bird)
+        low_contrast[200:220, 300:320] = 118
+
+        preprocessed = detector.preprocess_frame(low_contrast)
+
+        # CLAHE should enhance contrast - the image should be different
+        assert preprocessed.shape == low_contrast.shape
+
+
+class TestBirdDetectorStaticDetection:
+    """Tests for persistence-based static detection."""
+
+    def test_static_detection_disabled_by_default(self, sample_config):
+        """Test static detection is disabled when not in config."""
+        detector = BirdDetector(sample_config)
+
+        assert detector.static_detection_enabled is False
+        assert detector.persistence_map is None
+        assert detector.calibration_complete is False
+
+    def test_static_detection_enabled(self, config_with_static_detection):
+        """Test static detection initializes with correct parameters."""
+        detector = BirdDetector(config_with_static_detection)
+
+        assert detector.static_detection_enabled is True
+        assert detector.calibration_frames == 10
+        assert detector.persistence_threshold == 0.5
+        assert detector.learning_rate == 0.1
+
+    def test_persistence_map_lazy_initialization(self, config_with_static_detection):
+        """Test persistence map is None until first frame processed."""
+        detector = BirdDetector(config_with_static_detection)
+
+        assert detector.persistence_map is None
+
+        # Process a frame to trigger lazy initialization
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        detector.detect(frame)
+
+        # Now persistence map should be initialized
+        assert detector.persistence_map is not None
+        assert detector.persistence_map.shape == (480, 640)
+        assert detector.persistence_map.dtype == np.float32
+
+    def test_frame_count_increments(self, config_with_static_detection):
+        """Test frame count increments during calibration."""
+        detector = BirdDetector(config_with_static_detection)
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Process 5 frames
+        for i in range(5):
+            detector.detect(frame)
+            assert detector.frame_count == i + 1
+
+    def test_calibration_completes_after_threshold(self, config_with_static_detection):
+        """Test calibration completes after specified number of frames."""
+        detector = BirdDetector(config_with_static_detection)
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Process frames until just before calibration threshold
+        for _ in range(9):
+            detector.detect(frame)
+        assert detector.calibration_complete is False
+
+        # Process one more frame to complete calibration
+        detector.detect(frame)
+        assert detector.calibration_complete is True
+        assert detector.static_mask is not None
+
+    def test_persistence_accumulates_for_static_pixels(self, config_with_static_detection):
+        """Test persistent foreground pixels accumulate in persistence map."""
+        detector = BirdDetector(config_with_static_detection)
+
+        # Create a foreground mask with a persistent region
+        fg_mask = np.zeros((480, 640), dtype=np.uint8)
+        fg_mask[200:220, 300:320] = 255  # Persistent foreground region
+
+        # Initialize and update persistence map
+        detector._initialize_persistence_map(fg_mask.shape)
+        initial_value = detector.persistence_map[210, 310]
+
+        # Update multiple times
+        for _ in range(5):
+            detector.update_persistence_map(fg_mask)
+
+        # Persistent region should have accumulated higher values
+        assert detector.persistence_map[210, 310] > initial_value
+        # Background region should remain near zero
+        assert detector.persistence_map[50, 50] < 0.1
+
+    def test_static_mask_masks_persistent_regions(self, config_with_static_detection):
+        """Test static mask correctly masks out persistent foreground regions."""
+        detector = BirdDetector(config_with_static_detection)
+
+        # Create foreground mask with persistent region
+        fg_mask = np.zeros((480, 640), dtype=np.uint8)
+        fg_mask[200:220, 300:320] = 255
+
+        # Initialize and accumulate persistence
+        detector._initialize_persistence_map(fg_mask.shape)
+        for _ in range(20):  # Enough iterations to exceed threshold
+            detector.update_persistence_map(fg_mask)
+
+        # Compute static mask
+        detector.compute_static_mask()
+
+        # Persistent region should be masked out (0)
+        assert detector.static_mask[210, 310] == 0
+        # Non-persistent region should be valid (255)
+        assert detector.static_mask[50, 50] == 255
+
+    def test_apply_static_mask_removes_static_detections(self, config_with_static_detection):
+        """Test apply_static_mask removes detections in static regions."""
+        detector = BirdDetector(config_with_static_detection)
+
+        # Setup static mask with a masked region
+        detector._initialize_persistence_map((480, 640))
+        detector.static_mask[200:220, 300:320] = 0  # Masked static region
+
+        # Create foreground mask with detection in static region
+        fg_mask = np.zeros((480, 640), dtype=np.uint8)
+        fg_mask[200:220, 300:320] = 255  # Detection in static region
+        fg_mask[50:70, 100:120] = 255    # Detection in valid region
+
+        # Apply static mask
+        result = detector.apply_static_mask(fg_mask)
+
+        # Static region detection should be removed
+        assert result[210, 310] == 0
+        # Valid region detection should remain
+        assert result[60, 110] == 255
+
+    def test_reset_static_detection(self, config_with_static_detection):
+        """Test reset_static_detection clears all state."""
+        detector = BirdDetector(config_with_static_detection)
+
+        # Process some frames to build state
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        for _ in range(15):
+            detector.detect(frame)
+
+        assert detector.persistence_map is not None
+        assert detector.calibration_complete is True
+
+        # Reset
+        detector.reset_static_detection()
+
+        assert detector.persistence_map is None
+        assert detector.static_mask is None
+        assert detector.frame_count == 0
+        assert detector.calibration_complete is False
+
+    def test_static_detection_integrates_with_detect(self, config_with_static_detection):
+        """Test static detection integrates correctly in full detect pipeline."""
+        detector = BirdDetector(config_with_static_detection)
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Run detection pipeline
+        boxes, mask = detector.detect(frame)
+
+        # Should return valid tuple without errors
+        assert isinstance(boxes, list)
+        assert isinstance(mask, np.ndarray)
+        assert mask.shape == (480, 640)

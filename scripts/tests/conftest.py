@@ -19,26 +19,29 @@ def sample_config():
     """
     return {
         'detection': {
-            'min_contour_area': 0.1,
-            'max_contour_area': 500,
-            'mog2_history': 500,
-            'mog2_var_threshold': 25,
-            'blur_kernel_size': 5,
-            'morph_kernel_size': 3,
-            'morph_iterations': 2
+            'min_contour_area': 4,
+            'max_contour_area': 300,
+            'mog2_history': 300,
+            'mog2_var_threshold': 16,
+            'blur_kernel_size': 3,
+            'morph_kernel_size': 2,
+            'morph_iterations': 1,
+            'clahe_enabled': True,
+            'clahe_clip_limit': 2.0,
+            'clahe_tile_size': 8
         },
         'tracking': {
-            'max_disappeared': 40,
-            'max_distance': 120
+            'max_disappeared': 25,
+            'max_distance': 60
         },
         'spatial_filter': {
             'enabled': False,
-            'horizon_line_percent': 0.70
+            'horizon_line_percent': 0.85
         },
         'temporal_filter': {
             'enabled': False,
-            'min_confirm_frames': 15,
-            'min_move_distance': 50.0
+            'min_confirm_frames': 8,
+            'min_move_distance': 25.0
         },
         'exclusion_zones': {
             'enabled': False,
@@ -164,3 +167,19 @@ def sample_bounding_boxes():
         (190, 190, 20, 20),  # Centroid: (200, 200)
         (290, 140, 20, 20)   # Centroid: (300, 150)
     ]
+
+
+@pytest.fixture
+def config_with_static_detection(sample_config):
+    """
+    Configuration with static detection enabled for testing persistence-based filtering.
+    Uses low calibration_frames for faster test execution.
+    """
+    config = sample_config.copy()
+    config['static_detection'] = {
+        'enabled': True,
+        'calibration_frames': 10,  # Low for fast tests
+        'persistence_threshold': 0.5,
+        'learning_rate': 0.1  # Higher rate for faster accumulation in tests
+    }
+    return config
