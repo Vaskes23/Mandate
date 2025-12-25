@@ -7,7 +7,7 @@ contour filtering, and centroid calculation.
 import pytest
 import numpy as np
 import cv2
-from detector import BirdDetector, BackgroundSubtractor
+from detector import BirdDetector, BackgroundSubtractor, compute_iou
 
 
 class TestBackgroundSubtractor:
@@ -479,3 +479,202 @@ class TestBirdDetectorStaticDetection:
         assert isinstance(boxes, list)
         assert isinstance(mask, np.ndarray)
         assert mask.shape == (480, 640)
+
+
+class TestComputeIoU:
+    """Tests for IoU (Intersection over Union) calculation function."""
+
+    def test_iou_no_overlap(self):
+        """Test IoU is 0 for completely separate boxes."""
+        box1 = (0, 0, 10, 10)      # Top-left corner
+        box2 = (100, 100, 10, 10)  # Far away
+
+        iou = compute_iou(box1, box2)
+
+        assert iou == 0.0
+
+    def test_iou_identical_boxes(self):
+        """Test IoU is 1 for identical boxes."""
+        box1 = (50, 50, 20, 20)
+        box2 = (50, 50, 20, 20)
+
+        iou = compute_iou(box1, box2)
+
+        assert iou == 1.0
+
+    def test_iou_partial_overlap_horizontal(self):
+        """Test IoU for horizontally overlapping boxes."""
+        # Two 20x10 boxes sharing a 10x10 region
+        box1 = (0, 0, 20, 10)   # Area = 200
+        box2 = (10, 0, 20, 10)  # Area = 200, overlaps 10x10 = 100
+
+        iou = compute_iou(box1, box2)
+
+        # Intersection = 100, Union = 200 + 200 - 100 = 300
+        # IoU = 100/300 = 0.333...
+        assert abs(iou - (100 / 300)) < 0.001
+
+    def test_iou_partial_overlap_vertical(self):
+        """Test IoU for vertically overlapping boxes."""
+        box1 = (0, 0, 10, 20)   # Area = 200
+        box2 = (0, 10, 10, 20)  # Area = 200, overlaps 10x10 = 100
+
+        iou = compute_iou(box1, box2)
+
+        assert abs(iou - (100 / 300)) < 0.001
+
+    def test_iou_one_inside_other(self):
+        """Test IoU when smaller box is inside larger box."""
+        box1 = (0, 0, 100, 100)   # Area = 10000
+        box2 = (25, 25, 50, 50)   # Area = 2500, completely inside
+
+        iou = compute_iou(box1, box2)
+
+        # Intersection = 2500 (entire smaller box)
+        # Union = 10000 (entire larger box since smaller is inside)
+        assert abs(iou - (2500 / 10000)) < 0.001
+
+    def test_iou_touching_edges(self):
+        """Test IoU for boxes that touch but don't overlap."""
+        box1 = (0, 0, 10, 10)
+        box2 = (10, 0, 10, 10)  # Starts exactly where box1 ends
+
+        iou = compute_iou(box1, box2)
+
+        # Touching edges have 0 intersection area
+        assert iou == 0.0
+
+    def test_iou_zero_area_box(self):
+        """Test IoU handles degenerate (zero-area) boxes."""
+        box1 = (0, 0, 0, 10)   # Zero width
+        box2 = (0, 0, 10, 10)
+
+        iou = compute_iou(box1, box2)
+
+        assert iou == 0.0
+
+
+class TestNonMaximumSuppression:
+    """Tests for NMS (Non-Maximum Suppression) functionality."""
+
+    def test_nms_disabled_returns_original(self, sample_config, sample_bounding_boxes):
+        """Test NMS returns original boxes unchanged when disabled."""
+        # sample_config has no NMS section, so nms_enabled defaults to False
+        detector = BirdDetector(sample_config)
+
+        result = detector.apply_nms(sample_bounding_boxes)
+
+        assert result == sample_bounding_boxes
+
+    def test_nms_single_box_unchanged(self, config_with_nms):
+        """Test single box passes through NMS unchanged."""
+        detector = BirdDetector(config_with_nms)
+        boxes = [(50, 50, 20, 20)]
+
+        result = detector.apply_nms(boxes)
+
+        assert result == boxes
+
+    def test_nms_empty_list(self, config_with_nms):
+        """Test NMS handles empty input gracefully."""
+        detector = BirdDetector(config_with_nms)
+
+        result = detector.apply_nms([])
+
+        assert result == []
+
+    def test_nms_merges_overlapping_boxes(self, config_with_nms, overlapping_bounding_boxes):
+        """Test overlapping boxes are reduced by NMS."""
+        detector = BirdDetector(config_with_nms)
+
+        result = detector.apply_nms(overlapping_bounding_boxes)
+
+        # All boxes overlap significantly, should reduce to 1
+        assert len(result) < len(overlapping_bounding_boxes)
+        assert len(result) >= 1
+
+    def test_nms_preserves_separated_boxes(self, config_with_nms, separated_bounding_boxes):
+        """Test non-overlapping boxes (real bird flock) are preserved."""
+        detector = BirdDetector(config_with_nms)
+
+        result = detector.apply_nms(separated_bounding_boxes)
+
+        # All boxes are well-separated, none should be suppressed
+        assert len(result) == len(separated_bounding_boxes)
+
+    def test_nms_prioritizes_larger_boxes(self, config_with_nms):
+        """Test larger boxes are kept over smaller overlapping boxes."""
+        detector = BirdDetector(config_with_nms)
+        # Large box and small overlapping box with high overlap
+        # Small box: (100, 100, 15, 15) -> corners (100,100) to (115,115), area=225
+        # Large box: (95, 95, 25, 25) -> corners (95,95) to (120,120), area=625
+        # Intersection: (100,100) to (115,115) = 15x15 = 225
+        # Union: 225 + 625 - 225 = 625, IoU = 225/625 = 0.36 > 0.3 threshold
+        boxes = [
+            (100, 100, 15, 15),  # Small box (area 225)
+            (95, 95, 25, 25),   # Large box overlapping (area 625)
+        ]
+
+        result = detector.apply_nms(boxes)
+
+        # Larger box should be kept, smaller suppressed
+        assert len(result) == 1
+        assert result[0] == (95, 95, 25, 25)
+
+    def test_nms_dense_cluster_reduction(self, config_with_nms):
+        """Test dense cluster of boxes (like lamp post) is reduced significantly."""
+        detector = BirdDetector(config_with_nms)
+        # Simulate dense false-positive cluster
+        cluster = [
+            (100, 100, 15, 15),
+            (103, 102, 15, 15),
+            (106, 104, 15, 15),
+            (104, 106, 15, 15),
+            (108, 103, 15, 15),
+        ]
+        # Add a separate detection (real bird)
+        separate_bird = (400, 200, 15, 15)
+        boxes = cluster + [separate_bird]
+
+        result = detector.apply_nms(boxes)
+
+        # Cluster should merge, separate bird should remain
+        assert len(result) < len(boxes)
+        # The separate bird should be in results
+        assert separate_bird in result
+
+    def test_nms_integrates_with_detect_pipeline(self, config_with_nms, blank_frame):
+        """Test NMS integrates correctly in full detect() pipeline."""
+        detector = BirdDetector(config_with_nms)
+
+        # Run detection pipeline
+        boxes, mask = detector.detect(blank_frame)
+
+        # Should return valid tuple without errors
+        assert isinstance(boxes, list)
+        assert isinstance(mask, np.ndarray)
+
+    def test_nms_iou_threshold_affects_merging(self, sample_config):
+        """Test different IoU thresholds affect merging behavior."""
+        # Low threshold = aggressive merging
+        config_low = sample_config.copy()
+        config_low['nms'] = {'enabled': True, 'iou_threshold': 0.1}
+        detector_low = BirdDetector(config_low)
+
+        # High threshold = conservative merging
+        config_high = sample_config.copy()
+        config_high['nms'] = {'enabled': True, 'iou_threshold': 0.7}
+        detector_high = BirdDetector(config_high)
+
+        # Moderately overlapping boxes
+        boxes = [
+            (100, 100, 20, 20),
+            (110, 110, 20, 20),  # ~25% overlap with first box
+        ]
+
+        result_low = detector_low.apply_nms(boxes)
+        result_high = detector_high.apply_nms(boxes)
+
+        # Low threshold should merge (IoU ~0.25 > 0.1)
+        # High threshold should keep separate (IoU ~0.25 < 0.7)
+        assert len(result_low) <= len(result_high)

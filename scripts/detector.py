@@ -8,6 +8,48 @@ import numpy as np
 from typing import List, Tuple, Optional
 
 
+def compute_iou(box1: Tuple[int, int, int, int], box2: Tuple[int, int, int, int]) -> float:
+    """
+    Compute Intersection over Union (IoU) between two bounding boxes.
+    IoU measures overlap: 0.0 = no overlap, 1.0 = identical boxes.
+
+    Args:
+        box1: First bounding box as (x, y, width, height)
+        box2: Second bounding box as (x, y, width, height)
+
+    Returns:
+        IoU value between 0.0 and 1.0
+    """
+    # Convert (x, y, w, h) format to corner coordinates (x1, y1, x2, y2)
+    x1_a, y1_a = box1[0], box1[1]
+    x2_a, y2_a = box1[0] + box1[2], box1[1] + box1[3]
+
+    x1_b, y1_b = box2[0], box2[1]
+    x2_b, y2_b = box2[0] + box2[2], box2[1] + box2[3]
+
+    # Compute intersection rectangle coordinates
+    x1_inter = max(x1_a, x1_b)
+    y1_inter = max(y1_a, y1_b)
+    x2_inter = min(x2_a, x2_b)
+    y2_inter = min(y2_a, y2_b)
+
+    # Compute intersection area (0 if boxes don't overlap)
+    inter_width = max(0, x2_inter - x1_inter)
+    inter_height = max(0, y2_inter - y1_inter)
+    inter_area = inter_width * inter_height
+
+    # Compute union area = area_a + area_b - intersection
+    area_a = box1[2] * box1[3]
+    area_b = box2[2] * box2[3]
+    union_area = area_a + area_b - inter_area
+
+    # Avoid division by zero for degenerate boxes
+    if union_area == 0:
+        return 0.0
+
+    return inter_area / union_area
+
+
 class BackgroundSubtractor:
     """
     Wrapper for MOG2 background subtraction optimized for bird detection.
@@ -118,6 +160,11 @@ class BirdDetector:
         self.static_mask: Optional[np.ndarray] = None      # Binary mask of static regions
         self.frame_count: int = 0                          # Frames processed for calibration
         self.calibration_complete: bool = False            # Flag when calibration is done
+
+        # NMS (Non-Maximum Suppression) configuration
+        # Merges overlapping bounding boxes to reduce false-positive clusters
+        self.nms_enabled = config.get('nms', {}).get('enabled', False)
+        self.iou_threshold = config.get('nms', {}).get('iou_threshold', 0.3)
 
     def preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
         """
@@ -334,6 +381,57 @@ class BirdDetector:
 
         return valid_boxes
 
+    def apply_nms(self, bounding_boxes: List[Tuple[int, int, int, int]]) -> List[Tuple[int, int, int, int]]:
+        """
+        Apply Non-Maximum Suppression to merge highly overlapping bounding boxes.
+        Reduces false-positive clusters (e.g., around lamp posts) while preserving
+        scattered detections (real birds in a flock).
+
+        Algorithm:
+        1. Sort boxes by area (larger boxes have priority - more likely real birds)
+        2. Take largest remaining box, add to output
+        3. Remove all boxes that overlap significantly (IoU > threshold)
+        4. Repeat until no boxes remain
+
+        Args:
+            bounding_boxes: List of (x, y, w, h) tuples from filter_contours()
+
+        Returns:
+            Filtered list of (x, y, w, h) tuples after suppressing overlapping boxes
+        """
+        # Early exit if NMS disabled or not enough boxes to compare
+        if not self.nms_enabled or len(bounding_boxes) <= 1:
+            return bounding_boxes
+
+        # Convert to list for modification (input may be tuple/iterator)
+        boxes = list(bounding_boxes)
+
+        # Sort by area descending - larger boxes processed first
+        # Larger detections are more likely real birds vs noise fragments
+        boxes.sort(key=lambda b: b[2] * b[3], reverse=True)
+
+        # Track which boxes to keep after suppression
+        keep = []
+
+        while boxes:
+            # Take the largest remaining box as reference
+            current = boxes.pop(0)
+            keep.append(current)
+
+            # Filter out boxes that overlap significantly with current box
+            remaining = []
+            for box in boxes:
+                iou = compute_iou(current, box)
+
+                # Keep boxes with low overlap (separate detections, e.g., different birds)
+                # Suppress boxes with high overlap (redundant detections, e.g., false positives)
+                if iou < self.iou_threshold:
+                    remaining.append(box)
+
+            boxes = remaining
+
+        return keep
+
     def detect(self, frame: np.ndarray) -> Tuple[List[Tuple[int, int, int, int]], np.ndarray]:
         """
         Complete detection pipeline: preprocess -> subtract -> morphology -> contours.
@@ -402,6 +500,11 @@ class BirdDetector:
 
         # Step 5: Filter and extract bounding boxes with spatial filtering
         bounding_boxes = self.filter_contours(contours, frame_height)
+
+        # Step 6: Apply Non-Maximum Suppression to merge overlapping detections
+        # Reduces false-positive clusters around static objects (lamp posts, buildings)
+        if self.nms_enabled:
+            bounding_boxes = self.apply_nms(bounding_boxes)
 
         return bounding_boxes, cleaned_mask
 

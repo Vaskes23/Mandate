@@ -84,19 +84,28 @@
 		"draw_debug": false
 	},
 
-	"_comment_static_detection": "=== STATIC DETECTION === Auto-learns persistent foreground. DISABLED by default - enable carefully!",
+	"_comment_static_detection": "=== STATIC DETECTION === Auto-learns persistent foreground (lamp posts, antennas)",
 	"static_detection": {
-		"_comment_enabled": "CAUTION: Can filter out real birds! Start with false, enable only if exclusion_zones aren't enough",
-		"enabled": false,
+		"_comment_enabled": "true = auto-mask persistent objects, false = disabled",
+		"enabled": true,
 
 		"_comment_calibration_frames": "Frames to learn static objects. SMALLER = faster startup. LARGER = better learning. Range: 50-300",
-		"calibration_frames": 100,
+		"calibration_frames": 50,
 
 		"_comment_persistence_threshold": "How often pixel must be foreground to mask. SMALLER = aggressive (masks more). LARGER = only very persistent pixels. Range: 0.3-0.9",
-		"persistence_threshold": 0.7,
+		"persistence_threshold": 0.5,
 
 		"_comment_learning_rate": "How fast map updates. SMALLER = slower. LARGER = may mask birds. Range: 0.01-0.1",
-		"learning_rate": 0.03
+		"learning_rate": 0.05
+	},
+
+	"_comment_nms": "=== NON-MAXIMUM SUPPRESSION === Merges overlapping detections to reduce false-positive clusters",
+	"nms": {
+		"_comment_enabled": "true = merge overlapping boxes, false = keep all detections separate",
+		"enabled": true,
+
+		"_comment_iou_threshold": "Overlap threshold for merging. SMALLER = more aggressive merging. LARGER = only merge near-identical boxes. Range: 0.1-0.7",
+		"iou_threshold": 0.3
 	},
 
 	"visualization": {

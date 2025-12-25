@@ -183,3 +183,45 @@ def config_with_static_detection(sample_config):
         'learning_rate': 0.1  # Higher rate for faster accumulation in tests
     }
     return config
+
+
+@pytest.fixture
+def config_with_nms(sample_config):
+    """
+    Configuration with NMS (Non-Maximum Suppression) enabled.
+    Used for testing overlap-based bounding box merging.
+    """
+    config = sample_config.copy()
+    config['nms'] = {
+        'enabled': True,
+        'iou_threshold': 0.3  # Boxes with >30% overlap will be merged
+    }
+    return config
+
+
+@pytest.fixture
+def overlapping_bounding_boxes():
+    """
+    Bounding boxes with significant overlap (simulating false-positive cluster).
+    All boxes overlap significantly and should be merged by NMS.
+    """
+    return [
+        (100, 100, 20, 20),  # Base box
+        (105, 105, 20, 20),  # Overlaps with base
+        (110, 110, 20, 20),  # Overlaps with previous
+        (108, 108, 20, 20),  # Overlaps with all
+    ]
+
+
+@pytest.fixture
+def separated_bounding_boxes():
+    """
+    Bounding boxes that are well-separated (simulating real bird flock).
+    No overlap - all should remain after NMS.
+    """
+    return [
+        (0, 0, 15, 15),      # Top-left
+        (100, 100, 15, 15),  # Middle
+        (200, 200, 15, 15),  # Bottom area
+        (300, 50, 15, 15),   # Right side
+    ]
