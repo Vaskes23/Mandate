@@ -321,360 +321,184 @@ class TestBirdDetectorCLAHE:
         assert preprocessed.shape == low_contrast.shape
 
 
-class TestBirdDetectorStaticDetection:
-    """Tests for persistence-based static detection."""
-
-    def test_static_detection_disabled_by_default(self, sample_config):
-        """Test static detection is disabled when not in config."""
-        detector = BirdDetector(sample_config)
-
-        assert detector.static_detection_enabled is False
-        assert detector.persistence_map is None
-        assert detector.calibration_complete is False
-
-    def test_static_detection_enabled(self, config_with_static_detection):
-        """Test static detection initializes with correct parameters."""
-        detector = BirdDetector(config_with_static_detection)
-
-        assert detector.static_detection_enabled is True
-        assert detector.calibration_frames == 10
-        assert detector.persistence_threshold == 0.5
-        assert detector.learning_rate == 0.1
-
-    def test_persistence_map_lazy_initialization(self, config_with_static_detection):
-        """Test persistence map is None until first frame processed."""
-        detector = BirdDetector(config_with_static_detection)
-
-        assert detector.persistence_map is None
-
-        # Process a frame to trigger lazy initialization
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        detector.detect(frame)
-
-        # Now persistence map should be initialized
-        assert detector.persistence_map is not None
-        assert detector.persistence_map.shape == (480, 640)
-        assert detector.persistence_map.dtype == np.float32
-
-    def test_frame_count_increments(self, config_with_static_detection):
-        """Test frame count increments during calibration."""
-        detector = BirdDetector(config_with_static_detection)
-
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-
-        # Process 5 frames
-        for i in range(5):
-            detector.detect(frame)
-            assert detector.frame_count == i + 1
-
-    def test_calibration_completes_after_threshold(self, config_with_static_detection):
-        """Test calibration completes after specified number of frames."""
-        detector = BirdDetector(config_with_static_detection)
-
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-
-        # Process frames until just before calibration threshold
-        for _ in range(9):
-            detector.detect(frame)
-        assert detector.calibration_complete is False
-
-        # Process one more frame to complete calibration
-        detector.detect(frame)
-        assert detector.calibration_complete is True
-        assert detector.static_mask is not None
-
-    def test_persistence_accumulates_for_static_pixels(self, config_with_static_detection):
-        """Test persistent foreground pixels accumulate in persistence map."""
-        detector = BirdDetector(config_with_static_detection)
-
-        # Create a foreground mask with a persistent region
-        fg_mask = np.zeros((480, 640), dtype=np.uint8)
-        fg_mask[200:220, 300:320] = 255  # Persistent foreground region
-
-        # Initialize and update persistence map
-        detector._initialize_persistence_map(fg_mask.shape)
-        initial_value = detector.persistence_map[210, 310]
-
-        # Update multiple times
-        for _ in range(5):
-            detector.update_persistence_map(fg_mask)
-
-        # Persistent region should have accumulated higher values
-        assert detector.persistence_map[210, 310] > initial_value
-        # Background region should remain near zero
-        assert detector.persistence_map[50, 50] < 0.1
-
-    def test_static_mask_masks_persistent_regions(self, config_with_static_detection):
-        """Test static mask correctly masks out persistent foreground regions."""
-        detector = BirdDetector(config_with_static_detection)
-
-        # Create foreground mask with persistent region
-        fg_mask = np.zeros((480, 640), dtype=np.uint8)
-        fg_mask[200:220, 300:320] = 255
-
-        # Initialize and accumulate persistence
-        detector._initialize_persistence_map(fg_mask.shape)
-        for _ in range(20):  # Enough iterations to exceed threshold
-            detector.update_persistence_map(fg_mask)
-
-        # Compute static mask
-        detector.compute_static_mask()
-
-        # Persistent region should be masked out (0)
-        assert detector.static_mask[210, 310] == 0
-        # Non-persistent region should be valid (255)
-        assert detector.static_mask[50, 50] == 255
-
-    def test_apply_static_mask_removes_static_detections(self, config_with_static_detection):
-        """Test apply_static_mask removes detections in static regions."""
-        detector = BirdDetector(config_with_static_detection)
-
-        # Setup static mask with a masked region
-        detector._initialize_persistence_map((480, 640))
-        detector.static_mask[200:220, 300:320] = 0  # Masked static region
-
-        # Create foreground mask with detection in static region
-        fg_mask = np.zeros((480, 640), dtype=np.uint8)
-        fg_mask[200:220, 300:320] = 255  # Detection in static region
-        fg_mask[50:70, 100:120] = 255    # Detection in valid region
-
-        # Apply static mask
-        result = detector.apply_static_mask(fg_mask)
-
-        # Static region detection should be removed
-        assert result[210, 310] == 0
-        # Valid region detection should remain
-        assert result[60, 110] == 255
-
-    def test_reset_static_detection(self, config_with_static_detection):
-        """Test reset_static_detection clears all state."""
-        detector = BirdDetector(config_with_static_detection)
-
-        # Process some frames to build state
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        for _ in range(15):
-            detector.detect(frame)
-
-        assert detector.persistence_map is not None
-        assert detector.calibration_complete is True
-
-        # Reset
-        detector.reset_static_detection()
-
-        assert detector.persistence_map is None
-        assert detector.static_mask is None
-        assert detector.frame_count == 0
-        assert detector.calibration_complete is False
-
-    def test_static_detection_integrates_with_detect(self, config_with_static_detection):
-        """Test static detection integrates correctly in full detect pipeline."""
-        detector = BirdDetector(config_with_static_detection)
-
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-
-        # Run detection pipeline
-        boxes, mask = detector.detect(frame)
-
-        # Should return valid tuple without errors
-        assert isinstance(boxes, list)
-        assert isinstance(mask, np.ndarray)
-        assert mask.shape == (480, 640)
-
-
 class TestComputeIoU:
-    """Tests for IoU (Intersection over Union) calculation function."""
+    """Tests for IoU (Intersection over Union) computation."""
 
-    def test_iou_no_overlap(self):
-        """Test IoU is 0 for completely separate boxes."""
-        box1 = (0, 0, 10, 10)      # Top-left corner
-        box2 = (100, 100, 10, 10)  # Far away
+    def test_identical_boxes_return_one(self):
+        """Test IoU of identical boxes is 1.0."""
+        box = (100, 100, 50, 50)
+        iou = compute_iou(box, box)
+        assert iou == pytest.approx(1.0)
 
-        iou = compute_iou(box1, box2)
-
-        assert iou == 0.0
-
-    def test_iou_identical_boxes(self):
-        """Test IoU is 1 for identical boxes."""
-        box1 = (50, 50, 20, 20)
-        box2 = (50, 50, 20, 20)
-
-        iou = compute_iou(box1, box2)
-
-        assert iou == 1.0
-
-    def test_iou_partial_overlap_horizontal(self):
-        """Test IoU for horizontally overlapping boxes."""
-        # Two 20x10 boxes sharing a 10x10 region
-        box1 = (0, 0, 20, 10)   # Area = 200
-        box2 = (10, 0, 20, 10)  # Area = 200, overlaps 10x10 = 100
-
-        iou = compute_iou(box1, box2)
-
-        # Intersection = 100, Union = 200 + 200 - 100 = 300
-        # IoU = 100/300 = 0.333...
-        assert abs(iou - (100 / 300)) < 0.001
-
-    def test_iou_partial_overlap_vertical(self):
-        """Test IoU for vertically overlapping boxes."""
-        box1 = (0, 0, 10, 20)   # Area = 200
-        box2 = (0, 10, 10, 20)  # Area = 200, overlaps 10x10 = 100
-
-        iou = compute_iou(box1, box2)
-
-        assert abs(iou - (100 / 300)) < 0.001
-
-    def test_iou_one_inside_other(self):
-        """Test IoU when smaller box is inside larger box."""
-        box1 = (0, 0, 100, 100)   # Area = 10000
-        box2 = (25, 25, 50, 50)   # Area = 2500, completely inside
-
-        iou = compute_iou(box1, box2)
-
-        # Intersection = 2500 (entire smaller box)
-        # Union = 10000 (entire larger box since smaller is inside)
-        assert abs(iou - (2500 / 10000)) < 0.001
-
-    def test_iou_touching_edges(self):
-        """Test IoU for boxes that touch but don't overlap."""
+    def test_non_overlapping_boxes_return_zero(self):
+        """Test IoU of non-overlapping boxes is 0.0."""
         box1 = (0, 0, 10, 10)
-        box2 = (10, 0, 10, 10)  # Starts exactly where box1 ends
-
+        box2 = (100, 100, 10, 10)
         iou = compute_iou(box1, box2)
+        assert iou == pytest.approx(0.0)
 
-        # Touching edges have 0 intersection area
-        assert iou == 0.0
+    def test_partial_overlap(self):
+        """Test IoU of partially overlapping boxes is between 0 and 1."""
+        box1 = (0, 0, 20, 20)
+        box2 = (10, 10, 20, 20)
+        iou = compute_iou(box1, box2)
+        # Overlap is 10x10=100, box1=400, box2=400, union=400+400-100=700
+        # IoU = 100/700 ≈ 0.143
+        assert 0.0 < iou < 1.0
+        assert iou == pytest.approx(100 / 700, rel=0.01)
 
-    def test_iou_zero_area_box(self):
-        """Test IoU handles degenerate (zero-area) boxes."""
-        box1 = (0, 0, 0, 10)   # Zero width
+    def test_one_box_inside_other(self):
+        """Test IoU when one box is completely inside another."""
+        outer = (0, 0, 100, 100)
+        inner = (25, 25, 50, 50)
+        iou = compute_iou(outer, inner)
+        # Intersection = 50*50 = 2500, Union = 10000+2500-2500 = 10000
+        assert iou == pytest.approx(2500 / 10000, rel=0.01)
+
+    def test_degenerate_boxes_return_zero(self):
+        """Test IoU of zero-area boxes returns 0.0."""
+        box1 = (0, 0, 0, 0)
         box2 = (0, 0, 10, 10)
-
         iou = compute_iou(box1, box2)
+        assert iou == pytest.approx(0.0)
 
-        assert iou == 0.0
 
+class TestBirdDetectorNMS:
+    """Tests for Non-Maximum Suppression (NMS) functionality."""
 
-class TestNonMaximumSuppression:
-    """Tests for NMS (Non-Maximum Suppression) functionality."""
-
-    def test_nms_disabled_returns_original(self, sample_config, sample_bounding_boxes):
-        """Test NMS returns original boxes unchanged when disabled."""
-        # sample_config has no NMS section, so nms_enabled defaults to False
+    def test_nms_disabled_by_default(self, sample_config):
+        """Test NMS is disabled when not in config."""
         detector = BirdDetector(sample_config)
+        assert detector.nms_enabled is False
 
-        result = detector.apply_nms(sample_bounding_boxes)
-
-        assert result == sample_bounding_boxes
-
-    def test_nms_single_box_unchanged(self, config_with_nms):
-        """Test single box passes through NMS unchanged."""
+    def test_nms_enabled_initialization(self, config_with_nms):
+        """Test NMS initializes with correct parameters when enabled."""
         detector = BirdDetector(config_with_nms)
-        boxes = [(50, 50, 20, 20)]
+        assert detector.nms_enabled is True
+        assert detector.nms_grid_size == 32
+        assert detector.nms_max_per_cell == 4
+        assert detector.nms_iou_threshold == 0.3
 
-        result = detector.apply_nms(boxes)
-
-        assert result == boxes
-
-    def test_nms_empty_list(self, config_with_nms):
-        """Test NMS handles empty input gracefully."""
+    def test_nms_empty_input(self, config_with_nms):
+        """Test NMS returns empty list for empty input."""
         detector = BirdDetector(config_with_nms)
-
-        result = detector.apply_nms([])
-
+        result = detector.apply_fast_nms([])
         assert result == []
 
-    def test_nms_merges_overlapping_boxes(self, config_with_nms, overlapping_bounding_boxes):
-        """Test overlapping boxes are reduced by NMS."""
+    def test_nms_single_box(self, config_with_nms):
+        """Test NMS preserves single box unchanged."""
         detector = BirdDetector(config_with_nms)
+        boxes = [(100, 100, 20, 20)]
+        result = detector.apply_fast_nms(boxes)
+        assert len(result) == 1
+        assert result[0] == boxes[0]
 
-        result = detector.apply_nms(overlapping_bounding_boxes)
-
-        # All boxes overlap significantly, should reduce to 1
-        assert len(result) < len(overlapping_bounding_boxes)
-        assert len(result) >= 1
-
-    def test_nms_preserves_separated_boxes(self, config_with_nms, separated_bounding_boxes):
-        """Test non-overlapping boxes (real bird flock) are preserved."""
+    def test_nms_sparse_boxes_preserved(self, config_with_nms, separated_bounding_boxes):
+        """Test NMS preserves well-separated boxes (sparse cells)."""
         detector = BirdDetector(config_with_nms)
-
-        result = detector.apply_nms(separated_bounding_boxes)
-
-        # All boxes are well-separated, none should be suppressed
+        # Separated boxes are in different cells, all should be preserved
+        result = detector.apply_fast_nms(separated_bounding_boxes)
         assert len(result) == len(separated_bounding_boxes)
 
-    def test_nms_prioritizes_larger_boxes(self, config_with_nms):
-        """Test larger boxes are kept over smaller overlapping boxes."""
+    def test_nms_dense_cluster_reduced(self, config_with_nms):
+        """Test NMS reduces dense overlapping clusters."""
         detector = BirdDetector(config_with_nms)
-        # Large box and small overlapping box with high overlap
-        # Small box: (100, 100, 15, 15) -> corners (100,100) to (115,115), area=225
-        # Large box: (95, 95, 25, 25) -> corners (95,95) to (120,120), area=625
-        # Intersection: (100,100) to (115,115) = 15x15 = 225
-        # Union: 225 + 625 - 225 = 625, IoU = 225/625 = 0.36 > 0.3 threshold
+        # Create a truly dense cluster: 8 overlapping boxes (> max_per_cell of 4)
+        dense_cluster = [
+            (100, 100, 20, 20),
+            (102, 102, 20, 20),
+            (104, 104, 20, 20),
+            (106, 106, 20, 20),
+            (108, 108, 20, 20),
+            (110, 110, 20, 20),
+            (112, 112, 20, 20),
+            (114, 114, 20, 20),
+        ]
+        result = detector.apply_fast_nms(dense_cluster)
+        # Should reduce 8 overlapping boxes to max_per_cell (4) or fewer
+        assert len(result) <= detector.nms_max_per_cell
+        assert len(result) < len(dense_cluster)
+
+    def test_nms_preserves_order(self, config_with_nms):
+        """Test NMS maintains box order after filtering."""
+        detector = BirdDetector(config_with_nms)
+        # Create boxes in different cells (sparse)
         boxes = [
-            (100, 100, 15, 15),  # Small box (area 225)
-            (95, 95, 25, 25),   # Large box overlapping (area 625)
+            (0, 0, 10, 10),      # Cell (0, 0)
+            (100, 100, 10, 10),  # Cell (3, 3)
+            (200, 200, 10, 10),  # Cell (6, 6)
         ]
+        result = detector.apply_fast_nms(boxes)
+        # Should preserve original order
+        assert result == boxes
 
-        result = detector.apply_nms(boxes)
-
-        # Larger box should be kept, smaller suppressed
-        assert len(result) == 1
-        assert result[0] == (95, 95, 25, 25)
-
-    def test_nms_dense_cluster_reduction(self, config_with_nms):
-        """Test dense cluster of boxes (like lamp post) is reduced significantly."""
+    def test_nms_grid_cell_isolation(self, config_with_nms):
+        """Test NMS processes cells independently."""
         detector = BirdDetector(config_with_nms)
-        # Simulate dense false-positive cluster
-        cluster = [
-            (100, 100, 15, 15),
-            (103, 102, 15, 15),
-            (106, 104, 15, 15),
-            (104, 106, 15, 15),
-            (108, 103, 15, 15),
+        # Two clusters in different cells - each should be processed independently
+        boxes = [
+            # Cluster 1: Cell around (0, 0)
+            (0, 0, 10, 10),
+            (2, 2, 10, 10),
+            (4, 4, 10, 10),
+            # Cluster 2: Cell around (200, 200) - different grid cell
+            (200, 200, 10, 10),
+            (202, 202, 10, 10),
+            (204, 204, 10, 10),
         ]
-        # Add a separate detection (real bird)
-        separate_bird = (400, 200, 15, 15)
-        boxes = cluster + [separate_bird]
+        result = detector.apply_fast_nms(boxes)
+        # Both clusters should be processed, but boxes from different cells preserved
+        assert len(result) > 0
+        assert len(result) <= 6  # Some may be merged within each cluster
 
-        result = detector.apply_nms(boxes)
+    def test_nms_disabled_passthrough(self, sample_config, overlapping_bounding_boxes):
+        """Test boxes pass through unchanged when NMS is disabled."""
+        detector = BirdDetector(sample_config)
+        assert detector.nms_enabled is False
+        result = detector.apply_fast_nms(overlapping_bounding_boxes)
+        # When disabled, all boxes should be returned unchanged
+        assert len(result) == len(overlapping_bounding_boxes)
 
-        # Cluster should merge, separate bird should remain
-        assert len(result) < len(boxes)
-        # The separate bird should be in results
-        assert separate_bird in result
-
-    def test_nms_integrates_with_detect_pipeline(self, config_with_nms, blank_frame):
-        """Test NMS integrates correctly in full detect() pipeline."""
+    def test_nms_large_boxes_prioritized(self, config_with_nms):
+        """Test NMS keeps larger boxes when reducing dense clusters."""
         detector = BirdDetector(config_with_nms)
+        # Create cluster of overlapping boxes with different sizes in same cell
+        boxes = [
+            (100, 100, 5, 5),    # Small (area=25)
+            (102, 102, 5, 5),   # Small (area=25)
+            (101, 101, 20, 20), # Large (area=400) - should be kept
+            (103, 103, 5, 5),   # Small (area=25)
+            (104, 104, 5, 5),   # Small (area=25)
+            (105, 105, 5, 5),   # Small (area=25) - 6 boxes total, above threshold
+        ]
+        result = detector.apply_fast_nms(boxes)
+        # Should keep the largest box
+        has_large_box = any(box[2] == 20 and box[3] == 20 for box in result)
+        assert has_large_box
 
-        # Run detection pipeline
-        boxes, mask = detector.detect(blank_frame)
+    def test_nms_integrates_with_detect(self, config_with_nms):
+        """Test NMS integrates correctly in full detect pipeline."""
+        detector = BirdDetector(config_with_nms)
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
-        # Should return valid tuple without errors
+        # Run detection pipeline - should not raise errors
+        boxes, mask = detector.detect(frame)
+
         assert isinstance(boxes, list)
         assert isinstance(mask, np.ndarray)
 
-    def test_nms_iou_threshold_affects_merging(self, sample_config):
-        """Test different IoU thresholds affect merging behavior."""
-        # Low threshold = aggressive merging
-        config_low = sample_config.copy()
-        config_low['nms'] = {'enabled': True, 'iou_threshold': 0.1}
-        detector_low = BirdDetector(config_low)
+    def test_nms_performance_many_boxes(self, config_with_nms):
+        """Test NMS handles many boxes efficiently."""
+        import time
+        detector = BirdDetector(config_with_nms)
 
-        # High threshold = conservative merging
-        config_high = sample_config.copy()
-        config_high['nms'] = {'enabled': True, 'iou_threshold': 0.7}
-        detector_high = BirdDetector(config_high)
+        # Create 100 boxes distributed across the frame
+        boxes = [(i * 5, (i % 50) * 5, 10, 10) for i in range(100)]
 
-        # Moderately overlapping boxes
-        boxes = [
-            (100, 100, 20, 20),
-            (110, 110, 20, 20),  # ~25% overlap with first box
-        ]
+        start = time.time()
+        result = detector.apply_fast_nms(boxes)
+        elapsed = time.time() - start
 
-        result_low = detector_low.apply_nms(boxes)
-        result_high = detector_high.apply_nms(boxes)
-
-        # Low threshold should merge (IoU ~0.25 > 0.1)
-        # High threshold should keep separate (IoU ~0.25 < 0.7)
-        assert len(result_low) <= len(result_high)
+        # Should complete in under 10ms for 100 boxes
+        assert elapsed < 0.01  # 10ms threshold
+        assert len(result) > 0

@@ -170,31 +170,17 @@ def sample_bounding_boxes():
 
 
 @pytest.fixture
-def config_with_static_detection(sample_config):
-    """
-    Configuration with static detection enabled for testing persistence-based filtering.
-    Uses low calibration_frames for faster test execution.
-    """
-    config = sample_config.copy()
-    config['static_detection'] = {
-        'enabled': True,
-        'calibration_frames': 10,  # Low for fast tests
-        'persistence_threshold': 0.5,
-        'learning_rate': 0.1  # Higher rate for faster accumulation in tests
-    }
-    return config
-
-
-@pytest.fixture
 def config_with_nms(sample_config):
     """
-    Configuration with NMS (Non-Maximum Suppression) enabled.
-    Used for testing overlap-based bounding box merging.
+    Configuration with fast grid-based NMS enabled.
+    Uses spatial hashing for O(n) average complexity.
     """
     config = sample_config.copy()
     config['nms'] = {
         'enabled': True,
-        'iou_threshold': 0.3  # Boxes with >30% overlap will be merged
+        'grid_size': 32,       # Cell size in pixels (optimized for 1-15px birds)
+        'max_per_cell': 4,     # Max boxes per cell before NMS kicks in
+        'iou_threshold': 0.3   # Boxes with >30% overlap will be merged
     }
     return config
 

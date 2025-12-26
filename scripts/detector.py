@@ -6,6 +6,7 @@ Provides background subtraction and contour-based detection for small birds agai
 import cv2
 import numpy as np
 from typing import List, Tuple, Optional
+from collections import defaultdict
 
 
 def compute_iou(box1: Tuple[int, int, int, int], box2: Tuple[int, int, int, int]) -> float:
@@ -148,23 +149,13 @@ class BirdDetector:
                 tileGridSize=(self.clahe_tile_size, self.clahe_tile_size)
             )
 
-        # Persistence-based static detection configuration
-        # Automatically learns and masks persistent foreground pixels (lamp posts, antennas)
-        self.static_detection_enabled = config.get('static_detection', {}).get('enabled', False)
-        self.calibration_frames = config.get('static_detection', {}).get('calibration_frames', 100)
-        self.persistence_threshold = config.get('static_detection', {}).get('persistence_threshold', 0.5)
-        self.learning_rate = config.get('static_detection', {}).get('learning_rate', 0.05)
-
-        # Persistence map state (lazy initialized on first frame)
-        self.persistence_map: Optional[np.ndarray] = None  # Float32 accumulator [0.0, 1.0]
-        self.static_mask: Optional[np.ndarray] = None      # Binary mask of static regions
-        self.frame_count: int = 0                          # Frames processed for calibration
-        self.calibration_complete: bool = False            # Flag when calibration is done
-
         # NMS (Non-Maximum Suppression) configuration
-        # Merges overlapping bounding boxes to reduce false-positive clusters
+        # Uses fast grid-based algorithm: O(n) average complexity
+        # Filters dense false-positive clusters while preserving scattered bird flocks
         self.nms_enabled = config.get('nms', {}).get('enabled', False)
-        self.iou_threshold = config.get('nms', {}).get('iou_threshold', 0.3)
+        self.nms_grid_size = config.get('nms', {}).get('grid_size', 32)  # Cell size in pixels
+        self.nms_max_per_cell = config.get('nms', {}).get('max_per_cell', 4)  # Max boxes per cell before NMS
+        self.nms_iou_threshold = config.get('nms', {}).get('iou_threshold', 0.3)  # IoU threshold for merging
 
     def preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
         """
@@ -259,83 +250,6 @@ class BirdDetector:
 
         return masked
 
-    def _initialize_persistence_map(self, frame_shape: tuple) -> None:
-        """
-        Lazy initialize persistence map on first frame.
-        Creates a float32 array matching frame height x width for accumulation.
-
-        Args:
-            frame_shape: Shape tuple (height, width) or (height, width, channels)
-        """
-        height, width = frame_shape[:2]
-        self.persistence_map = np.zeros((height, width), dtype=np.float32)
-        self.static_mask = np.ones((height, width), dtype=np.uint8) * 255  # Start with all pixels valid
-
-    def update_persistence_map(self, fg_mask: np.ndarray) -> None:
-        """
-        Update persistence map with exponential moving average of foreground pixels.
-        Pixels that are frequently foreground accumulate higher values.
-
-        Args:
-            fg_mask: Binary foreground mask from MOG2 (0 or 255)
-        """
-        if self.persistence_map is None:
-            self._initialize_persistence_map(fg_mask.shape)
-
-        # Normalize mask to [0, 1] for EMA calculation
-        normalized_mask = (fg_mask > 0).astype(np.float32)
-
-        # Exponential moving average: new_val = (1-a)*old_val + a*new_observation
-        # Foreground pixels accumulate towards 1.0, background decays towards 0.0
-        self.persistence_map = (1 - self.learning_rate) * self.persistence_map + self.learning_rate * normalized_mask
-
-        # Increment frame count for calibration tracking
-        self.frame_count += 1
-
-    def compute_static_mask(self) -> None:
-        """
-        Compute binary static mask from persistence map.
-        Pixels with persistence above threshold are considered static obstacles.
-        Called once after calibration period completes.
-        """
-        if self.persistence_map is None:
-            return
-
-        # Pixels with high persistence (> threshold) are static, mask them OUT (set to 0)
-        # Pixels with low persistence (< threshold) are valid detection areas (255)
-        self.static_mask = np.where(
-            self.persistence_map > self.persistence_threshold,
-            0,    # Static pixel - mask out
-            255   # Valid pixel - keep detections
-        ).astype(np.uint8)
-
-    def apply_static_mask(self, mask: np.ndarray) -> np.ndarray:
-        """
-        Apply learned static mask to foreground mask.
-        Removes detections in areas identified as persistent static objects.
-
-        Args:
-            mask: Binary foreground mask
-
-        Returns:
-            Masked foreground with static regions removed
-        """
-        if not self.static_detection_enabled or self.static_mask is None:
-            return mask
-
-        # Bitwise AND: only keep pixels that are BOTH foreground AND not-static
-        return cv2.bitwise_and(mask, self.static_mask)
-
-    def reset_static_detection(self) -> None:
-        """
-        Reset static detection for recalibration.
-        Call this if camera moves or lighting changes significantly.
-        """
-        self.persistence_map = None
-        self.static_mask = None
-        self.frame_count = 0
-        self.calibration_complete = False
-
     def find_contours(self, mask: np.ndarray) -> List[np.ndarray]:
         """
         Find contours in the binary mask.
@@ -381,56 +295,67 @@ class BirdDetector:
 
         return valid_boxes
 
-    def apply_nms(self, bounding_boxes: List[Tuple[int, int, int, int]]) -> List[Tuple[int, int, int, int]]:
+    def apply_fast_nms(self, boxes: List[Tuple[int, int, int, int]]) -> List[Tuple[int, int, int, int]]:
         """
-        Apply Non-Maximum Suppression to merge highly overlapping bounding boxes.
-        Reduces false-positive clusters (e.g., around lamp posts) while preserving
-        scattered detections (real birds in a flock).
+        Apply fast grid-based Non-Maximum Suppression to reduce dense false-positive clusters.
+        Uses spatial hashing for O(n) average complexity instead of O(n²) standard NMS.
 
-        Algorithm:
-        1. Sort boxes by area (larger boxes have priority - more likely real birds)
-        2. Take largest remaining box, add to output
-        3. Remove all boxes that overlap significantly (IoU > threshold)
-        4. Repeat until no boxes remain
+        Strategy:
+        1. Hash boxes into grid cells based on centroid position
+        2. Sparse cells (≤ max_per_cell boxes): keep all boxes unchanged
+        3. Dense cells (> max_per_cell boxes): apply local IoU-based suppression
+
+        This preserves scattered bird flocks while filtering lamp post clusters.
 
         Args:
-            bounding_boxes: List of (x, y, w, h) tuples from filter_contours()
+            boxes: List of (x, y, w, h) tuples from filter_contours()
 
         Returns:
-            Filtered list of (x, y, w, h) tuples after suppressing overlapping boxes
+            Filtered list of bounding boxes after suppression
         """
         # Early exit if NMS disabled or not enough boxes to compare
-        if not self.nms_enabled or len(bounding_boxes) <= 1:
-            return bounding_boxes
+        if not self.nms_enabled or len(boxes) <= 1:
+            return boxes
 
-        # Convert to list for modification (input may be tuple/iterator)
-        boxes = list(bounding_boxes)
+        # Phase 1: Hash boxes into grid cells by centroid position - O(n)
+        cells = defaultdict(list)
+        for i, (x, y, w, h) in enumerate(boxes):
+            # Calculate centroid and determine which grid cell it belongs to
+            cx, cy = x + w // 2, y + h // 2
+            cell_key = (cx // self.nms_grid_size, cy // self.nms_grid_size)
+            cells[cell_key].append(i)
 
-        # Sort by area descending - larger boxes processed first
-        # Larger detections are more likely real birds vs noise fragments
-        boxes.sort(key=lambda b: b[2] * b[3], reverse=True)
+        # Track which box indices to keep
+        keep_indices = set()
 
-        # Track which boxes to keep after suppression
-        keep = []
+        # Phase 2: Process each cell
+        for cell_key, indices in cells.items():
+            if len(indices) <= self.nms_max_per_cell:
+                # Sparse cell - keep all boxes (likely real birds, not clustered false positives)
+                keep_indices.update(indices)
+            else:
+                # Dense cell - apply local NMS to reduce cluster
+                # Sort by area descending (larger boxes are more likely real detections)
+                local_boxes = [(i, boxes[i]) for i in indices]
+                local_boxes.sort(key=lambda x: x[1][2] * x[1][3], reverse=True)
 
-        while boxes:
-            # Take the largest remaining box as reference
-            current = boxes.pop(0)
-            keep.append(current)
+                kept = []
+                for idx, box in local_boxes:
+                    # Check if this box overlaps too much with any already-kept box
+                    should_keep = True
+                    for kept_idx in kept:
+                        if compute_iou(box, boxes[kept_idx]) >= self.nms_iou_threshold:
+                            should_keep = False
+                            break
 
-            # Filter out boxes that overlap significantly with current box
-            remaining = []
-            for box in boxes:
-                iou = compute_iou(current, box)
+                    # Keep box if it doesn't overlap too much and we haven't hit the cell limit
+                    if should_keep and len(kept) < self.nms_max_per_cell:
+                        kept.append(idx)
 
-                # Keep boxes with low overlap (separate detections, e.g., different birds)
-                # Suppress boxes with high overlap (redundant detections, e.g., false positives)
-                if iou < self.iou_threshold:
-                    remaining.append(box)
+                keep_indices.update(kept)
 
-            boxes = remaining
-
-        return keep
+        # Return filtered boxes in original order (for consistent visualization)
+        return [boxes[i] for i in sorted(keep_indices)]
 
     def detect(self, frame: np.ndarray) -> Tuple[List[Tuple[int, int, int, int]], np.ndarray]:
         """
@@ -473,23 +398,7 @@ class BirdDetector:
         if motion_mask is not None:
             fg_mask = cv2.bitwise_and(fg_mask, motion_mask)
 
-        # Step 2.2: Persistence-based static detection
-        # During calibration: accumulate foreground pixels to learn static objects
-        # After calibration: mask out persistent static regions (lamp posts, antennas)
-        if self.static_detection_enabled:
-            # Always update persistence map (rolling average even after calibration)
-            self.update_persistence_map(fg_mask)
-
-            # Check if calibration period is complete
-            if not self.calibration_complete and self.frame_count >= self.calibration_frames:
-                self.compute_static_mask()
-                self.calibration_complete = True
-
-            # Apply static mask after calibration is complete
-            if self.calibration_complete:
-                fg_mask = self.apply_static_mask(fg_mask)
-
-        # Step 2.5: Apply exclusion zones (manual fallback for static obstacles)
+        # Step 2.2: Apply exclusion zones (manual masking for static obstacles like lamp posts)
         fg_mask = self.apply_exclusion_mask(fg_mask)
 
         # Step 3: Morphological operations
@@ -501,10 +410,9 @@ class BirdDetector:
         # Step 5: Filter and extract bounding boxes with spatial filtering
         bounding_boxes = self.filter_contours(contours, frame_height)
 
-        # Step 6: Apply Non-Maximum Suppression to merge overlapping detections
-        # Reduces false-positive clusters around static objects (lamp posts, buildings)
-        if self.nms_enabled:
-            bounding_boxes = self.apply_nms(bounding_boxes)
+        # Step 5.5: Apply fast grid-based NMS to reduce dense false-positive clusters
+        # This runs in O(n) average time and preserves scattered bird flocks
+        bounding_boxes = self.apply_fast_nms(bounding_boxes)
 
         return bounding_boxes, cleaned_mask
 
