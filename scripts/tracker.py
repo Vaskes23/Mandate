@@ -35,10 +35,25 @@ class CentroidTracker:
             self.temporal_filter_enabled = config.get('temporal_filter', {}).get('enabled', False)
             self.min_confirm_frames = config.get('temporal_filter', {}).get('min_confirm_frames', 15)
             self.min_move_distance = config.get('temporal_filter', {}).get('min_move_distance', 50.0)
+            # Configurable probationary timeout (was hardcoded to 5, now default 8 for flicker tolerance)
+            self.probationary_max_disappeared = config.get('temporal_filter', {}).get('probationary_max_disappeared', 8)
+
+            # Burst detection configuration
+            # Applies stricter validation when abnormal number of detections appear
+            self.burst_detection_enabled = config.get('burst_detection', {}).get('enabled', False)
+            self.burst_threshold = config.get('burst_detection', {}).get('threshold', 50)
+            self.burst_penalty_frames = config.get('burst_detection', {}).get('penalty_frames', 10)
         else:
             self.temporal_filter_enabled = False
             self.min_confirm_frames = 15
             self.min_move_distance = 50.0
+            self.probationary_max_disappeared = 8  # Default: more tolerant of flickering
+            self.burst_detection_enabled = False
+            self.burst_threshold = 50
+            self.burst_penalty_frames = 10
+
+        # Track burst state for current frame
+        self.is_burst_frame = False
 
         # Probationary tracking for temporal filtering
         self.next_probationary_id = 0
@@ -47,7 +62,6 @@ class CentroidTracker:
         self.probationary_frames = OrderedDict()  # {prob_id: frame_count}
         self.probationary_disappeared = OrderedDict()  # {prob_id: disappeared_count}
         self.probationary_trajectories = OrderedDict()  # {prob_id: deque(positions)} - for cumulative path
-        self.probationary_max_disappeared = 5  # Fast cleanup for probationary objects
 
         # For trajectory visualization
         self.trajectories = {}  # {object_id: deque([(cx, cy), ...])}
@@ -146,7 +160,12 @@ class CentroidTracker:
         Returns:
             True if object should be promoted, False otherwise
         """
-        if self.probationary_frames[prob_id] < self.min_confirm_frames:
+        # During burst frames, require extra confirmation frames to filter false positives
+        effective_min_frames = self.min_confirm_frames
+        if self.is_burst_frame and self.burst_detection_enabled:
+            effective_min_frames = self.min_confirm_frames + self.burst_penalty_frames
+
+        if self.probationary_frames[prob_id] < effective_min_frames:
             return False
 
         # Calculate cumulative path length (distance traveled along trajectory)
@@ -185,6 +204,16 @@ class CentroidTracker:
         # If temporal filtering is disabled, use original behavior
         if not self.temporal_filter_enabled:
             return self._update_without_temporal_filter(input_centroids)
+
+        # Burst detection: detect abnormal detection spikes and apply stricter validation
+        # This catches detector anomalies (e.g., lighting changes, camera shake)
+        # Count net new detections (subtract both confirmed and probationary objects)
+        if self.burst_detection_enabled:
+            total_tracked = len(self.objects) + len(self.probationary)
+            new_detection_count = len(input_centroids) - total_tracked
+            self.is_burst_frame = new_detection_count > self.burst_threshold
+        else:
+            self.is_burst_frame = False
 
         # Track which detection index corresponds to each tracked object
         detection_indices = {}

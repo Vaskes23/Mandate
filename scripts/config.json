@@ -1,4 +1,13 @@
 {
+	"_comment_warmup": "=== WARMUP PERIOD === Skips detection during initial frames while background model calibrates",
+	"warmup": {
+		"_comment_enabled": "true = skip detection during warmup, false = detect from frame 1",
+		"enabled": true,
+
+		"_comment_frames": "Frames to skip before counting. 120 frames = 2 seconds at 60fps. Range: 30-180",
+		"frames": 120
+	},
+
 	"_comment_detection": "=== DETECTION PARAMETERS === Controls how birds are identified in each frame",
 	"detection": {
 		"_comment_min_contour_area": "Minimum pixel area for a detection. SMALLER = detect smaller/farther birds but more noise. LARGER = only bigger birds, fewer false positives. Range: 1-50",
@@ -8,10 +17,10 @@
 		"max_contour_area": 200,
 
 		"_comment_mog2_history": "Frames for background model. SMALLER = adapts faster. LARGER = more stable. Range: 100-1000",
-		"mog2_history": 300,
+		"mog2_history": 200,
 
 		"_comment_mog2_var_threshold": "Background subtraction sensitivity. SMALLER = more sensitive, more detections. LARGER = less sensitive. Range: 8-50",
-		"mog2_var_threshold": 8,
+		"mog2_var_threshold": 12,
 
 		"_comment_blur_kernel_size": "Gaussian blur (must be odd). SMALLER = sharper, more noise. LARGER = smoother, may blur small birds. Range: 1-9",
 		"blur_kernel_size": 3,
@@ -32,7 +41,7 @@
 		"clahe_tile_size": 4,
 
 		"_comment_motion_diff_threshold": "Frame differencing threshold. SMALLER = detects slow/gliding birds. LARGER = only fast movement, may miss slow birds. Range: 5-40",
-		"motion_diff_threshold": 6
+		"motion_diff_threshold": 10
 	},
 
 	"_comment_tracking": "=== TRACKING PARAMETERS === Links detections across frames",
@@ -59,10 +68,22 @@
 		"enabled": true,
 
 		"_comment_min_confirm_frames": "Frames to confirm detection. SMALLER = faster. LARGER = stricter. Range: 3-20",
-		"min_confirm_frames": 8,
+		"min_confirm_frames": 12,
 
 		"_comment_min_move_distance": "Min pixels movement to confirm. SMALLER = confirms stationary. LARGER = requires movement. Range: 10-100",
-		"min_move_distance": 25.0
+		"min_move_distance": 30.0
+	},
+
+	"_comment_burst_detection": "=== BURST DETECTION === Extra protection during abnormal detection spikes",
+	"burst_detection": {
+		"_comment_enabled": "true = apply stricter validation during detector anomalies",
+		"enabled": true,
+
+		"_comment_threshold": "If more than this many new detections in one frame, it's a burst. Range: 30-100",
+		"threshold": 50,
+
+		"_comment_penalty_frames": "Extra frames required for confirmation during burst. Range: 5-20",
+		"penalty_frames": 10
 	},
 
 	"_comment_exclusion_zones": "=== EXCLUSION ZONES === Manual areas to ignore (lamp posts)",

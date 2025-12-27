@@ -268,3 +268,136 @@ class TestDistanceMatrix:
         assert distances[0, 1] == pytest.approx(5.0)
         # Distance from (10,0) to (0,0) should be 10
         assert distances[1, 0] == pytest.approx(10.0)
+
+
+class TestBurstDetection:
+    """Tests for burst detection functionality.
+
+    Burst detection applies stricter validation when abnormal
+    detection spikes occur (e.g., lighting changes, camera shake).
+    """
+
+    def test_burst_detection_initialization_enabled(self, config_with_burst_detection):
+        """Test tracker initializes with burst detection settings from config."""
+        tracker = CentroidTracker(
+            max_disappeared=30,
+            max_distance=100,
+            config=config_with_burst_detection
+        )
+
+        assert tracker.burst_detection_enabled is True
+        assert tracker.burst_threshold == 5
+        assert tracker.burst_penalty_frames == 2
+        assert tracker.is_burst_frame is False
+
+    def test_burst_detection_initialization_disabled(self, sample_config):
+        """Test tracker defaults to burst detection disabled when not in config."""
+        tracker = CentroidTracker(
+            max_disappeared=30,
+            max_distance=100,
+            config=sample_config
+        )
+
+        assert tracker.burst_detection_enabled is False
+        assert tracker.is_burst_frame is False
+
+    def test_burst_detection_normal_update(self, config_with_burst_detection):
+        """Test is_burst_frame is False during normal operation (few detections)."""
+        tracker = CentroidTracker(
+            max_disappeared=30,
+            max_distance=100,
+            config=config_with_burst_detection
+        )
+
+        # Add 3 detections (below burst threshold of 5)
+        centroids = np.array([
+            [100, 100],
+            [200, 200],
+            [300, 300]
+        ], dtype=np.float64)
+
+        tracker.update(centroids)
+
+        # Should not be a burst (3 new detections < threshold of 5)
+        assert tracker.is_burst_frame is False
+
+    def test_burst_detection_triggers_on_spike(self, config_with_burst_detection):
+        """Test is_burst_frame becomes True when detection count exceeds threshold."""
+        tracker = CentroidTracker(
+            max_disappeared=30,
+            max_distance=100,
+            config=config_with_burst_detection
+        )
+
+        # Add 10 detections (above burst threshold of 5)
+        centroids = np.array([
+            [100 + i*20, 100 + i*20] for i in range(10)
+        ], dtype=np.float64)
+
+        tracker.update(centroids)
+
+        # Should be a burst (10 new detections > threshold of 5)
+        assert tracker.is_burst_frame is True
+
+    def test_burst_detection_increases_confirmation_frames(self, config_with_burst_detection):
+        """Test burst detection increases effective min_confirm_frames."""
+        tracker = CentroidTracker(
+            max_disappeared=30,
+            max_distance=100,
+            config=config_with_burst_detection
+        )
+
+        # Normal min_confirm_frames = 3, penalty_frames = 2
+        # During burst, effective should be 3 + 2 = 5
+
+        # Create burst condition
+        burst_centroids = np.array([
+            [100 + i*30, 100 + i*30] for i in range(10)
+        ], dtype=np.float64)
+        tracker.update(burst_centroids)
+        assert tracker.is_burst_frame is True
+
+        # Register a probationary object manually to test
+        prob_id = tracker.register_probationary(np.array([500, 500]))
+        tracker.probationary_frames[prob_id] = 4  # More than normal (3) but less than burst (5)
+
+        # Should NOT be promoted during burst (needs 5 frames, has 4)
+        result = tracker.check_probationary_promotion(prob_id)
+        assert result is False
+
+    def test_burst_detection_resets_after_normal_frame(self, config_with_burst_detection):
+        """Test is_burst_frame resets when detection count normalizes."""
+        tracker = CentroidTracker(
+            max_disappeared=30,
+            max_distance=100,
+            config=config_with_burst_detection
+        )
+
+        # First: trigger burst with 10 detections
+        burst_centroids = np.array([
+            [100 + i*30, 100 + i*30] for i in range(10)
+        ], dtype=np.float64)
+        tracker.update(burst_centroids)
+        assert tracker.is_burst_frame is True
+
+        # Now: normal frame with same 10 objects (0 new detections)
+        tracker.update(burst_centroids)
+        assert tracker.is_burst_frame is False
+
+    def test_burst_detection_disabled_no_effect(self, sample_config):
+        """Test burst detection has no effect when disabled."""
+        tracker = CentroidTracker(
+            max_disappeared=30,
+            max_distance=100,
+            config=sample_config
+        )
+
+        # Add 10 detections (would trigger burst if enabled)
+        centroids = np.array([
+            [100 + i*20, 100 + i*20] for i in range(10)
+        ], dtype=np.float64)
+
+        tracker.update(centroids)
+
+        # Should NOT be a burst (feature disabled)
+        assert tracker.is_burst_frame is False

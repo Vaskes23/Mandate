@@ -211,3 +211,37 @@ def separated_bounding_boxes():
         (200, 200, 15, 15),  # Bottom area
         (300, 50, 15, 15),   # Right side
     ]
+
+
+@pytest.fixture
+def config_with_warmup(sample_config):
+    """
+    Configuration with warmup period enabled.
+    Skips detection for first N frames while background model calibrates.
+    """
+    config = sample_config.copy()
+    config['warmup'] = {
+        'enabled': True,
+        'frames': 5  # Short warmup for faster tests
+    }
+    return config
+
+
+@pytest.fixture
+def config_with_burst_detection(sample_config):
+    """
+    Configuration with burst detection enabled.
+    Applies stricter validation when abnormal detection spikes occur.
+    """
+    config = sample_config.copy()
+    config['temporal_filter'] = {
+        'enabled': True,
+        'min_confirm_frames': 3,
+        'min_move_distance': 20.0
+    }
+    config['burst_detection'] = {
+        'enabled': True,
+        'threshold': 5,      # Low threshold for testing (>5 new detections = burst)
+        'penalty_frames': 2  # Extra frames required during burst
+    }
+    return config

@@ -157,6 +157,13 @@ class BirdDetector:
         self.nms_max_per_cell = config.get('nms', {}).get('max_per_cell', 4)  # Max boxes per cell before NMS
         self.nms_iou_threshold = config.get('nms', {}).get('iou_threshold', 0.3)  # IoU threshold for merging
 
+        # Warmup period configuration
+        # Skips detection during initial frames while MOG2 learns background
+        # Eliminates false positive burst from background model calibration
+        self.warmup_enabled = config.get('warmup', {}).get('enabled', False)
+        self.warmup_frames = config.get('warmup', {}).get('frames', 120)  # 2 seconds at 60fps
+        self.frames_processed = 0  # Counter for warmup tracking
+
     def preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
         """
         Preprocess frame with CLAHE contrast enhancement and Gaussian blur.
@@ -369,11 +376,27 @@ class BirdDetector:
             - bounding_boxes: List of (x, y, w, h) tuples
             - visualization_mask: Binary mask for debugging
         """
+        # Increment frame counter for warmup tracking
+        self.frames_processed += 1
+
         # Get frame dimensions
         frame_height = frame.shape[0]
 
         # Step 1: Preprocess (blur + CLAHE)
         preprocessed = self.preprocess_frame(frame)
+
+        # Warmup period: learn background but return empty detections
+        # This eliminates the false positive burst during MOG2 calibration
+        if self.warmup_enabled and self.frames_processed <= self.warmup_frames:
+            # Update frame differencing state
+            gray = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2GRAY)
+            self.prev_frame = gray
+
+            # Feed frame to MOG2 for background learning
+            self.bg_subtractor.apply(preprocessed)
+
+            # Return empty detections during warmup
+            return [], np.zeros((frame_height, frame.shape[1]), dtype=np.uint8)
 
         # Step 1.5: Frame Differencing (Motion Detection)
         # Calculate absolute difference between current and previous frame

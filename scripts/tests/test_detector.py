@@ -502,3 +502,74 @@ class TestBirdDetectorNMS:
         # Should complete in under 10ms for 100 boxes
         assert elapsed < 0.01  # 10ms threshold
         assert len(result) > 0
+
+
+class TestBirdDetectorWarmup:
+    """Tests for warmup period functionality.
+
+    Warmup period skips detection during initial frames while the MOG2
+    background model calibrates, preventing false positive bursts.
+    """
+
+    def test_warmup_initialization_enabled(self, config_with_warmup):
+        """Test detector initializes with warmup settings from config."""
+        detector = BirdDetector(config_with_warmup)
+
+        assert detector.warmup_enabled is True
+        assert detector.warmup_frames == 5
+        assert detector.frames_processed == 0
+
+    def test_warmup_initialization_disabled(self, sample_config):
+        """Test detector defaults to warmup disabled when not in config."""
+        detector = BirdDetector(sample_config)
+
+        assert detector.warmup_enabled is False
+        assert detector.warmup_frames == 120  # Default value
+        assert detector.frames_processed == 0
+
+    def test_warmup_returns_empty_during_warmup(self, config_with_warmup, blank_frame):
+        """Test detect() returns empty detections during warmup period."""
+        detector = BirdDetector(config_with_warmup)
+
+        # During warmup (frames 1-5), should return empty detections
+        for i in range(5):
+            boxes, mask = detector.detect(blank_frame)
+            assert boxes == []
+            assert detector.frames_processed == i + 1
+
+    def test_warmup_detects_after_warmup(self, config_with_warmup):
+        """Test detect() works normally after warmup period ends."""
+        detector = BirdDetector(config_with_warmup)
+        blank_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Process through warmup period
+        for _ in range(5):
+            detector.detect(blank_frame)
+
+        # Frame 6 should be processed normally (not return early)
+        boxes, mask = detector.detect(blank_frame)
+        assert detector.frames_processed == 6
+        # Frame is blank, so no detections expected, but pipeline ran
+        assert isinstance(boxes, list)
+        assert isinstance(mask, np.ndarray)
+
+    def test_warmup_frame_counter_increments(self, config_with_warmup, blank_frame):
+        """Test frame counter increments correctly during warmup."""
+        detector = BirdDetector(config_with_warmup)
+
+        for i in range(10):
+            detector.detect(blank_frame)
+            assert detector.frames_processed == i + 1
+
+    def test_warmup_background_model_learns(self, config_with_warmup):
+        """Test background model learns during warmup (prev_frame updated)."""
+        detector = BirdDetector(config_with_warmup)
+        blank_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Initially prev_frame is None
+        assert detector.prev_frame is None
+
+        # After first warmup frame, prev_frame should be set
+        detector.detect(blank_frame)
+        assert detector.prev_frame is not None
+        assert detector.prev_frame.shape == (480, 640)  # Grayscale
