@@ -9,6 +9,7 @@ interface UseCanvasRendererOptions {
   trackingDataMap: Map<number, TrackingData>;
   selectedBirdId: number | null;
   isProcessed: boolean;
+  isProcessing: boolean;
   onStatsUpdate?: (stats: TrackingStats) => void;
 }
 
@@ -24,6 +25,7 @@ export function useCanvasRenderer(options: UseCanvasRendererOptions): void {
     trackingDataMap,
     selectedBirdId,
     isProcessed,
+    isProcessing,
     onStatsUpdate
   } = options;
 
@@ -31,8 +33,10 @@ export function useCanvasRenderer(options: UseCanvasRendererOptions): void {
   const animationFrameRef = useRef<number>();
 
   useEffect(() => {
-    // Guard clause - don't render if not ready
-    if (!isProcessed || !videoRef.current || !canvasRef.current || !videoMetadata) {
+    // Guard clause - render when we have canvas, video, and either processing or processed
+    // This allows rendering to start as soon as we have tracking data
+    const hasTrackingData = trackingDataMap.size > 0;
+    if (!videoRef.current || !canvasRef.current || (!isProcessing && !isProcessed)) {
       return;
     }
 
@@ -42,17 +46,46 @@ export function useCanvasRenderer(options: UseCanvasRendererOptions): void {
 
     if (!ctx) return;
 
+    // Get FPS - use metadata if available, otherwise estimate from video or default to 60
+    const fps = videoMetadata?.fps || 60;
+
+    // Calculate scale factors for coordinate transformation
+    // Canvas internal dimensions may differ from CSS display size
+    const getScaleFactors = () => {
+      const displayWidth = canvas.clientWidth || canvas.width;
+      const displayHeight = canvas.clientHeight || canvas.height;
+      // If canvas size matches video, scale is 1:1
+      // Otherwise we need to scale coordinates
+      return {
+        scaleX: canvas.width / (video.videoWidth || canvas.width),
+        scaleY: canvas.height / (video.videoHeight || canvas.height)
+      };
+    };
+
     // Main render function called on each animation frame
     const renderFrame = () => {
+      // Always continue the loop, but only draw when video is playing
       if (!video.paused && !video.ended) {
         // Calculate current frame number from video time
-        const currentFrame = Math.floor(video.currentTime * videoMetadata.fps);
+        const currentFrame = Math.floor(video.currentTime * fps);
 
-        // Get tracking data for this frame
-        const trackingData = trackingDataMap.get(currentFrame);
+        // Get tracking data for this frame (or try nearby frames)
+        let trackingData = trackingDataMap.get(currentFrame);
+
+        // If no exact match, try nearby frames (handles timing drift)
+        if (!trackingData && hasTrackingData) {
+          for (let offset = 1; offset <= 2; offset++) {
+            trackingData = trackingDataMap.get(currentFrame - offset) ||
+                          trackingDataMap.get(currentFrame + offset);
+            if (trackingData) break;
+          }
+        }
 
         // Clear canvas for new frame
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Get scale factors
+        const { scaleX, scaleY } = getScaleFactors();
 
         if (trackingData) {
           // Update stats via callback
@@ -65,33 +98,51 @@ export function useCanvasRenderer(options: UseCanvasRendererOptions): void {
 
           // Draw bounding boxes and IDs for each detected bird
           trackingData.objects.forEach(bird => {
-            // Determine color based on selection (purple for selected, green for others)
+            const colorStatus = (bird as any).color_status || 'pending';
+
+            // Skip birds that passed color analysis (they're false positives)
+            if (colorStatus === 'passed') {
+              return;
+            }
+
+            // Apply scale factors to coordinates
+            const x = bird.x * scaleX;
+            const y = bird.y * scaleY;
+            const w = bird.w * scaleX;
+            const h = bird.h * scaleY;
+            const cx = bird.cx * scaleX;
+            const cy = bird.cy * scaleY;
+
+            // Determine color: purple for selected, green for suspicious (real birds)
             const isSelected = bird.id === selectedBirdId;
-            const color = isSelected ? '#9F00FF' : '#00FF00';
+            let color = '#00FF00'; // Green for suspicious/pending (real birds)
+            if (isSelected) {
+              color = '#9F00FF'; // Purple for selected
+            }
 
             // Draw bounding box
             ctx.strokeStyle = color;
             ctx.lineWidth = isSelected ? 3 : 2;
-            ctx.strokeRect(bird.x, bird.y, bird.w, bird.h);
+            ctx.strokeRect(x, y, w, h);
 
             // Draw ID label with background
             const text = `ID: ${bird.id}`;
-            ctx.font = '14px Arial';
+            ctx.font = '12px Arial';
             const textMetrics = ctx.measureText(text);
-            const textHeight = 16;
+            const textHeight = 14;
 
             // Background rectangle for label
             ctx.fillStyle = color;
-            ctx.fillRect(bird.x, bird.y - textHeight - 4, textMetrics.width + 8, textHeight + 4);
+            ctx.fillRect(x, y - textHeight - 2, textMetrics.width + 6, textHeight + 2);
 
             // Label text
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillText(text, bird.x + 4, bird.y - 6);
+            ctx.fillText(text, x + 3, y - 4);
 
             // Draw centroid marker (red dot at center of bird)
             ctx.fillStyle = '#FF0000';
             ctx.beginPath();
-            ctx.arc(bird.cx, bird.cy, 4, 0, 2 * Math.PI);
+            ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
             ctx.fill();
           });
         }
@@ -110,5 +161,5 @@ export function useCanvasRenderer(options: UseCanvasRendererOptions): void {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [canvasRef, videoRef, isProcessed, trackingDataMap, videoMetadata, selectedBirdId, onStatsUpdate]);
+  }, [canvasRef, videoRef, isProcessed, isProcessing, trackingDataMap, videoMetadata, selectedBirdId, onStatsUpdate]);
 }
